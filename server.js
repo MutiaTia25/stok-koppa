@@ -694,7 +694,7 @@ app.get('/api/low-stock', authMiddleware, (req, res) => {
 // ===== STOCK OPNAME =====
 app.get('/api/opname/products', authMiddleware, (req, res) => {
   const data = db.prepare(`
-    SELECT p.id, p.name, p.sku, c.name as category_name,
+    SELECT p.id, p.name, p.sku, p.barcode, p.unit, c.name as category_name,
            p.warehouse_stock, p.warehouse_min, p.warehouse_max,
            p.display_stock, p.display_min, p.display_max
     FROM products p JOIN categories c ON c.id=p.category_id
