@@ -1287,9 +1287,10 @@ app.post(
         return String(val).trim();
       }
 
-      // TAHAP 1: baca semua baris, gabungkan qty per barcode
-      // (satu produk bisa muncul di baris MIOF dan MIPS sekaligus)
+      // TAHAP 1: baca semua baris
+      // Key = barcode + '|' + lokasi → beda lokasi = produk terpisah, sama lokasi+barcode = duplikat
       const productMap = new Map();
+      let duplikat = 0;
 
       sheet.eachRow((row, rowNum) => {
         if (rowNum === 1) return;
@@ -1313,32 +1314,34 @@ app.post(
         if (m) { sku = m[1].trim(); name = m[2].trim(); }
 
         const isMess = locationRaw.toUpperCase().includes('MIPS');
+        const locKey = isMess ? 'mess' : 'office';
 
-        if (!productMap.has(barcode)) {
-          productMap.set(barcode, {
-            barcode, name, sku, categoryName, unit, price, minQty, maxQty,
-            warehouse_stock: 0, display_stock: 0
-          });
-        } else {
-          // Update info produk jika baris ini lebih lengkap
-          const e = productMap.get(barcode);
-          if (price > 0 && e.price === 0)   e.price  = price;
-          if (minQty > 0 && e.minQty === 0) e.minQty = minQty;
-          if (maxQty > 0 && e.maxQty === 0) e.maxQty = maxQty;
-          if (unit && unit !== 'PCS')        e.unit   = unit;
+        // Key unik = barcode + lokasi → beda lokasi = produk terpisah
+        const mapKey = barcode + '|' + locKey;
+
+        if (productMap.has(mapKey)) {
+          // Barcode + lokasi sama → baris duplikat di Excel, gabung qty saja
+          const e = productMap.get(mapKey);
+          if (isMess) e.display_stock += qty;
+          else        e.warehouse_stock += qty;
+          duplikat++;
+          return;
         }
 
-        // Akumulasi stok sesuai lokasi
-        const p = productMap.get(barcode);
-        if (isMess) p.display_stock += qty;
-        else        p.warehouse_stock += qty;
+        productMap.set(mapKey, {
+          barcode, name, sku, categoryName, unit, price, minQty, maxQty,
+          locKey,
+          warehouse_stock: isMess ? 0 : qty,
+          display_stock:   isMess ? qty : 0,
+        });
       });
 
-      // TAHAP 2: upsert ke DB dalam satu transaksi (BEGIN/COMMIT manual karena node:sqlite tidak punya .transaction())
+      // TAHAP 2: upsert ke DB
+      // Barcode + lokasi sama → update; barcode sama tapi lokasi beda → insert baru
       let berhasil = 0;
       db.exec('BEGIN');
       try {
-        for (const [barcode, p] of productMap) {
+        for (const [mapKey, p] of productMap) {
           try {
             let cat = db.prepare('SELECT id FROM categories WHERE UPPER(name)=?').get(p.categoryName);
             if (!cat) {
@@ -1347,8 +1350,13 @@ app.post(
               cat = db.prepare('SELECT id FROM categories WHERE UPPER(name)=?').get(p.categoryName);
             }
 
-            const existing = db.prepare('SELECT id FROM products WHERE barcode=?').get(barcode);
+            // Cari di DB: harus cocok BARCODE + LOKASI keduanya
+            const existing = db.prepare(
+              'SELECT id FROM products WHERE barcode=? AND default_location=?'
+            ).get(p.barcode, p.locKey);
+
             if (existing) {
+              // Update — barcode + lokasi sama
               db.prepare(`
                 UPDATE products
                 SET name=?, sku=?, category_id=?, price=?, unit=?,
@@ -1363,6 +1371,7 @@ app.post(
                 existing.id
               );
             } else {
+              // Insert baru — barcode sama tapi lokasi beda itu boleh
               db.prepare(`
                 INSERT INTO products
                   (name, category_id, sku, barcode, price, unit,
@@ -1370,9 +1379,9 @@ app.post(
                    warehouse_min, warehouse_max, display_min, display_max)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
               `).run(
-                p.name, cat.id, p.sku, barcode, p.price, p.unit,
+                p.name, cat.id, p.sku, p.barcode, p.price, p.unit,
                 p.warehouse_stock, p.display_stock,
-                p.display_stock > 0 && p.warehouse_stock === 0 ? 'mess' : 'office',
+                p.locKey,
                 p.minQty, p.maxQty, p.minQty, p.maxQty
               );
             }
@@ -1387,16 +1396,17 @@ app.post(
         throw txErr;
       }
 
-      res.json({ 
-        ok: true, 
-        total: berhasil, 
-        berhasil, 
-        dilewati, 
-        duplikat: productMap.size < (berhasil + gagal.length + dilewati) ? 0 : 0,
-        gagal: gagal.length, 
+      res.json({
+        ok: true,
+        total: berhasil,
+        berhasil,
+        dilewati,
+        duplikat,
+        gagal: gagal.length,
         errorDetail: gagal.slice(0, 20),
-        info: `Excel berisi ${berhasil + gagal.length} produk unik (barcode duplikat digabung otomatis)`
+        info: `Import selesai: ${berhasil} entri diproses (beda lokasi = produk terpisah, barcode+lokasi sama = dilewati)`
       });
+
 
     } catch (err) {
       console.error('Import error:', err);
