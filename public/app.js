@@ -5,24 +5,7 @@ let categories = [];
 let categoryChart = null;
 
 
-function stockFlow(){
-  const scan = document.getElementById('scanBarcode');
-  const qty = document.getElementById('stockQty');
-
-  if(scan){
-    scan.addEventListener('change', () => {
-      qty?.focus();
-    });
-  }
-
-  if(qty){
-    qty.addEventListener('keydown', (e) => {
-      if(e.key === 'Enter'){
-        document.getElementById('stockNote')?.focus();
-      }
-    });
-  }
-}
+// stockFlow() dihapus — logika scan sudah dihandle di setupStockScanListener()
 
 // ===== UTIL =====
 function toast(msg, type='success'){
@@ -594,10 +577,15 @@ async function loadStockPage(){
     `<option value="${p.id}" data-barcode="${p.barcode || ''}">${p.name}</option>`
   ).join('');
 
-  // Reset form ke kondisi awal
-  resetStockForm();
+  // Reset form ke kondisi awal (tanpa clear listener — listener tetap aktif)
+  stockSelectedProduct = null;
+  const scanInputReset = document.getElementById('scanBarcode');
+  if (scanInputReset) { scanInputReset.value = ''; }
+  hideStockSearch();
+  const formElReset = document.getElementById('stockInlineForm');
+  if (formElReset) { formElReset.style.display = 'none'; formElReset.innerHTML = ''; }
 
-  // Setup scan listener (hanya sekali)
+  // Setup scan listener (flag mencegah duplikat attachment)
   setupStockScanListener();
 
   // Transfer — isi hidden select (kompatibilitas) + setup listener baru
@@ -619,19 +607,27 @@ async function loadStockPage(){
 
 function setupStockScanListener(){
   const scanInput = document.getElementById('scanBarcode');
-  if (!scanInput || scanInput.dataset.stockListenerAdded) return;
-  let debounce = null;
+  if (!scanInput) return;
 
+  // Gunakan flag dataset — jangan clone node (cloneNode memutus referensi DOM aktif)
+  if (scanInput.dataset.stockListenerAdded === 'true') return;
+  scanInput.dataset.stockListenerAdded = 'true';
+
+  let debounce = null;
   let lastStockInputTime = 0;
+
   scanInput.addEventListener('input', () => {
     const val = scanInput.value.trim();
     if (!val) { hideStockSearch(); return; }
+
     const now = Date.now();
     const diff = now - lastStockInputTime;
     lastStockInputTime = now;
+
     clearTimeout(debounce);
+
     if (diff < 50) {
-      // Scanner fisik — tunggu selesai lalu cari exact
+      // Scanner fisik — karakter masuk sangat cepat, tunggu selesai lalu exact match
       debounce = setTimeout(() => {
         const finalVal = scanInput.value.trim();
         const exact = stockProducts.find(p => String(p.barcode || '').trim() === finalVal);
@@ -640,7 +636,7 @@ function setupStockScanListener(){
       }, 150);
     } else {
       // Ketik manual — live search
-      debounce = setTimeout(() => showStockSearch(val), 300);
+      debounce = setTimeout(() => showStockSearch(scanInput.value.trim()), 300);
     }
   });
 
@@ -668,8 +664,6 @@ function setupStockScanListener(){
     const drop = document.getElementById('stockSearchResults');
     if (drop && !drop.contains(e.target) && e.target !== scanInput) hideStockSearch();
   });
-
-  scanInput.dataset.stockListenerAdded = 'true';
 }
 
 function showStockSearch(query){
@@ -729,10 +723,18 @@ function pilihProdukStock(product){
   // Render form inline
   renderStockForm(product);
 
+  // Delay lebih panjang — innerHTML perlu waktu render sebelum bisa di-focus
   setTimeout(() => {
     const qty = document.getElementById('stockQty');
     if (qty) qty.focus();
-  }, 100);
+    else {
+      // Fallback: coba lagi 200ms kemudian
+      setTimeout(() => {
+        const qty2 = document.getElementById('stockQty');
+        if (qty2) qty2.focus();
+      }, 200);
+    }
+  }, 150);
   if (typeof playBeep === 'function') playBeep();
 }
 
@@ -790,6 +792,7 @@ function resetStockForm(){
   hideStockSearch();
   const formEl = document.getElementById('stockInlineForm');
   if (formEl) { formEl.style.display = 'none'; formEl.innerHTML = ''; }
+  // Jangan reset flag stockListenerAdded — listener tetap aktif, tidak perlu re-attach
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1087,7 +1090,11 @@ async function startTransferBarcodeScanner(){
       await scanner.stop();
       reader.style.display = 'none';
       const scanInput = document.getElementById('transferScanInput');
-      if (scanInput) scanInput.value = decodedText;
+      if (scanInput) {
+        scanInput.value = decodedText;
+        // PENTING: trigger event 'input' agar setupTransferScanListener() mendeteksi nilai baru
+        scanInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
       const exact = transferProducts.find(p => String(p.barcode || '').trim() === decodedText.trim());
       if (exact) pilihProdukTransfer(exact);
       else {
@@ -1777,8 +1784,6 @@ window.onload = () => {
 
   }
 
-  stockFlow();
-
 };
 
   document.getElementById('loginPassword').addEventListener('keydown', e => {
@@ -1786,69 +1791,17 @@ window.onload = () => {
   });
 
 
-async function findProductByBarcode(barcode){
-  try{
-
-    const products = await api('/products');
-
-    console.log('====================');
-    console.log('BARCODE SCAN:', barcode);
-    console.log('JUMLAH PRODUK:', products.length);
-
-    products.forEach(p => {
-      console.log(
-        'ID:', p.id,
-        '| NAMA:', p.name,
-        '| BARCODE:', p.barcode
-      );
-    });
-
-    const product = products.find(
-      p =>
-        String(p.barcode || '').trim() ===
-        String(barcode).trim()
-    );
-
-    if(product){
-
-      console.log('PRODUK DITEMUKAN:', product);
-
-      const select =
-        document.getElementById('stockProductSelect');
-
-      select.value = product.id;
-
-      toast(
-        'Produk ditemukan: ' + product.name,
-        'success'
-      );
-
-      document.getElementById('stockQty').focus();
-
-      playBeep();
-
-    }else{
-
-      console.log(
-        'PRODUK TIDAK DITEMUKAN UNTUK BARCODE:',
-        barcode
-      );
-
-      toast(
-        'Barcode tidak terdaftar',
-        'error'
-      );
-
-    }
-
-  }catch(err){
-
-    console.error(err);
-
-    toast(err.message,'error');
-
+// findProductByBarcode — kompatibilitas, arahkan ke pilihProdukStock
+function findProductByBarcode(barcode){
+  barcode = String(barcode || '').trim();
+  if (!barcode) return;
+  const exact = stockProducts.find(p => String(p.barcode || '').trim() === barcode);
+  if (exact) {
+    pilihProdukStock(exact);
+  } else {
+    showStockSearch(barcode);
+    toast('Barcode tidak ditemukan', 'error');
   }
-
 }
 
 
@@ -1868,10 +1821,21 @@ function startBarcodeScanner(){
       ]
     },
     async (decodedText) => {
-      document.getElementById('scanBarcode').value = decodedText;
-      await findProductByBarcode(decodedText);
       await scanner.stop();
       reader.style.display = 'none';
+      const scanInput = document.getElementById('scanBarcode');
+      if (scanInput) {
+        scanInput.value = decodedText;
+        // PENTING: trigger event 'input' agar setupStockScanListener() mendeteksi nilai baru
+        scanInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      const exact = stockProducts.find(p => String(p.barcode || '').trim() === decodedText.trim());
+      if (exact) {
+        pilihProdukStock(exact);
+      } else {
+        showStockSearch(decodedText);
+        toast('Barcode tidak ditemukan di daftar produk', 'error');
+      }
     },
     () => {}
   );
@@ -1885,7 +1849,7 @@ async function startOpnameScanner(){
   const scanner = new Html5Qrcode('opnameReader');
   scanner.start(
     { facingMode: 'environment' },
-    { fps: 10, qrbox: 250,
+    { fps: 20, qrbox: { width: 300, height: 120 }, aspectRatio: 1.7778,
       formatsToSupport: [
         Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
         Html5QrcodeSupportedFormats.UPC_A,  Html5QrcodeSupportedFormats.UPC_E,
@@ -1902,109 +1866,66 @@ async function startOpnameScanner(){
   );
 }
 
-const barcodeInput =
-document.addEventListener('DOMContentLoaded', () => {
-
-  const scanInput =
-  document.getElementById('scanBarcode');
-
-  if(scanInput){
-
-    scanInput.addEventListener(
-      'input',
-      async function(){
-
-        const barcode =
-        this.value.trim();
-
-        if(!barcode) return;
-
-        await findProductByBarcode(barcode);
-
-      }
-    );
-
-  }
-
-});
+// Listener scanBarcode dihandle di setupStockScanListener() — tidak perlu duplikat di sini
 
 async function startProductBarcodeScanner(){
-
   const reader = document.getElementById('productReader');
+  if (!reader) { toast('Element productReader tidak ditemukan', 'error'); return; }
 
-  if(!reader){
-    toast('Element productReader tidak ditemukan', 'error');
-    return;
+  // Kalau sudah ada scanner aktif sebelumnya, bersihkan dulu
+  if (window._productScanner) {
+    try { await window._productScanner.stop(); } catch(e) {}
+    window._productScanner = null;
   }
 
   reader.style.display = 'block';
+  reader.innerHTML = '';
 
-  const scanner = new Html5Qrcode("productReader");
+  const scanner = new Html5Qrcode('productReader');
+  window._productScanner = scanner;
 
-  scanner.start(
-    { facingMode: "environment" },
-    {
-      fps: 10,
-      qrbox: 250,
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39
-      ]
-    },
-
-async (decodedText) => {
-
-      console.log("BARCODE TERBACA:", decodedText);
-
-      const barcodeInput = document.getElementById('barcode');
-
-      if(barcodeInput){
-
-        barcodeInput.value = decodedText;
-
-        barcodeInput.dispatchEvent(
-          new Event('input', { bubbles:true })
-        );
-
-        barcodeInput.dispatchEvent(
-          new Event('change', { bubbles:true })
-        );
-
-        barcodeInput.focus();
-
-        toast(
-          'Barcode berhasil dibaca: ' + decodedText,
-          'success'
-        );
-
-        playBeep();
-
-      } else {
-
-        toast('Input barcode tidak ditemukan', 'error');
-
-      }
-
-      setTimeout(async () => {
-
-        try{
-          await scanner.stop();
-        }catch(err){
-          console.log(err);
-        }
-
+  try {
+    await scanner.start(
+      { facingMode: 'environment' },
+      {
+        fps: 20,
+        // qrbox memanjang horizontal — penting untuk EAN-13 / barcode produk
+        qrbox: { width: 300, height: 120 },
+        aspectRatio: 1.7778,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39
+        ]
+      },
+      async (decodedText) => {
+        // Stop scanner segera setelah barcode terbaca
+        try { await scanner.stop(); } catch(e) {}
+        window._productScanner = null;
         reader.style.display = 'none';
 
-      }, 500);
-
-    },
-
-    (errorMessage) => {}
-  );
+        const barcodeInput = document.getElementById('barcode');
+        if (barcodeInput) {
+          barcodeInput.value = decodedText.trim();
+          barcodeInput.dispatchEvent(new Event('input', { bubbles: true }));
+          barcodeInput.dispatchEvent(new Event('change', { bubbles: true }));
+          barcodeInput.focus();
+          toast('Barcode terbaca: ' + decodedText, 'success');
+          if (typeof playBeep === 'function') playBeep();
+        } else {
+          toast('Input barcode tidak ditemukan', 'error');
+        }
+      },
+      () => {} // error per-frame — abaikan
+    );
+  } catch(err) {
+    reader.style.display = 'none';
+    window._productScanner = null;
+    toast('Gagal akses kamera: ' + err.message, 'error');
+  }
 }
 function handleBarcodeScan(barcode){
 
@@ -2029,7 +1950,7 @@ function handleBarcodeScan(barcode){
         'success'
       );
 
-      document.getElementById('stockQty').focus();
+      const qtyEl = document.getElementById('stockQty'); if (qtyEl) qtyEl.focus();
 
       playBeep();
 
