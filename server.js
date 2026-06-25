@@ -321,53 +321,7 @@ app.get('/api/products', authMiddleware, (req, res) => {
   res.json(rows);
 });
 
-// Cari produk berdasarkan barcode persis (untuk hasil scan barcode fisik).
-// Mengembalikan null jika tidak ditemukan, supaya frontend bisa menawarkan "tambah produk baru".
-app.get('/api/products', authMiddleware, (req, res) => {
-
-  const { q, category_id } = req.query;
-
-  let sql = `
-    SELECT
-      p.*,
-      c.name as category_name
-    FROM products p
-    JOIN categories c
-      ON c.id = p.category_id
-    WHERE 1=1
-  `;
-
-  const params = [];
-
-  if (q) {
-    sql += `
-      AND (
-        p.name LIKE ?
-        OR p.sku LIKE ?
-        OR p.barcode LIKE ?
-      )
-    `;
-
-    params.push(
-      `%${q}%`,
-      `%${q}%`,
-      `%${q}%`
-    );
-  }
-
-  if (category_id) {
-    sql += ` AND p.category_id = ? `;
-    params.push(category_id);
-  }
-
-  const products =
-    db.prepare(sql)
-      .all(...params)
-      .map(enrichProduct);
-
-  res.json(products);
-
-});
+// Route duplikat dihapus — sudah di-handle oleh route GET /api/products di atas
 
 app.get('/api/products/:id', authMiddleware, (req, res) => {
   const p = db.prepare(`SELECT p.*, c.name as category_name FROM products p
