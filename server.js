@@ -296,10 +296,10 @@ app.delete('/api/categories/:id', authMiddleware, adminOnly, (req, res) => {
 function enrichProduct(p) {
   p.total_stock = p.warehouse_stock + p.display_stock;
   p.warehouse_reorder_qty = p.warehouse_stock <= p.warehouse_min
-    ? Math.max(0, p.warehouse_max - p.warehouse_stock)
+    ? Math.max(0, p.warehouse_min - p.warehouse_stock)
     : 0;
   p.display_refill_qty = p.display_stock <= p.display_min
-    ? Math.max(0, p.display_max - p.display_stock)
+    ? Math.max(0, p.display_min - p.display_stock)
     : 0;
   return p;
 }
