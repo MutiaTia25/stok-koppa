@@ -1167,7 +1167,7 @@ function buildReportFilename(type, from, to, ext){
   let typeLabel;
   if (type === 'in') typeLabel = 'Stok-Masuk';
   else if (type === 'out') typeLabel = 'Stok-Keluar';
-  else typeLabel = 'Semua-Stok';
+  else typeLabel = 'Stok-Masuk-Keluar';
 
   let datePart = '';
   const f = formatDateForFilename(from);
