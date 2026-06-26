@@ -1167,7 +1167,7 @@ function buildReportFilename(type, from, to, ext){
   let typeLabel;
   if (type === 'in') typeLabel = 'Stok-Masuk';
   else if (type === 'out') typeLabel = 'Stok-Keluar';
-  else typeLabel = 'Stok-Masuk-Keluar';
+  else typeLabel = 'Semua-Stok';
 
   let datePart = '';
   const f = formatDateForFilename(from);
@@ -1179,29 +1179,55 @@ function buildReportFilename(type, from, to, ext){
   return `Riwayat-${typeLabel}${datePart}.${ext}`;
 }
 
+
+
+// Export Excel untuk halaman Stok Masuk/Keluar (tanpa opname)
 function exportLogs(){
-  const fromEl = document.getElementById('logFrom') || document.getElementById('repFrom');
-  const toEl = document.getElementById('logTo') || document.getElementById('repTo');
-  const typeEl = document.getElementById('repType') || document.getElementById('logType');
+  const fromEl = document.getElementById('logFrom');
+  const toEl   = document.getElementById('logTo');
+  const typeEl = document.getElementById('logType');
   const from = fromEl ? fromEl.value : '';
-  const to = toEl ? toEl.value : '';
-  let type = typeEl ? typeEl.value : '';
+  const to   = toEl   ? toEl.value   : '';
+  let type   = typeEl ? typeEl.value  : '';
   if (!type) type = 'all';
   let path = '/export/logs?';
   if (from) path += 'from=' + from + '&';
-  if (to) path += 'to=' + to + '&';
+  if (to)   path += 'to='   + to   + '&';
   if (type && type !== 'all') path += 'type=' + type;
-  const filename = buildReportFilename(type, from, to, 'xlsx');
-  downloadWithAuth(path, filename);
+  const f = formatDateForFilename(from);
+  const t = formatDateForFilename(to);
+  let datePart = '';
+  if (f && t) datePart = `_${f}_sd_${t}`;
+  else if (f) datePart = `_dari_${f}`;
+  else if (t) datePart = `_sampai_${t}`;
+  downloadWithAuth(path, `Riwayat-Stok-Masuk-Keluar${datePart}.xlsx`);
+}
+
+// Export Excel Laporan Lengkap (1 sheet: stok + distribusi + opname)
+function exportLaporan(){
+  const from = document.getElementById('repFrom').value;
+  const to   = document.getElementById('repTo').value;
+  const type = document.getElementById('repType').value;
+  let path = '/export/laporan?';
+  if (from) path += 'from=' + from + '&';
+  if (to)   path += 'to='   + to   + '&';
+  if (type && type !== 'all') path += 'type=' + type;
+  const f = formatDateForFilename(from);
+  const t = formatDateForFilename(to);
+  let datePart = '';
+  if (f && t) datePart = `_${f}_sd_${t}`;
+  else if (f) datePart = `_dari_${f}`;
+  else if (t) datePart = `_sampai_${t}`;
+  downloadWithAuth(path, `Laporan-Stok-Keseluruhan${datePart}.xlsx`);
 }
 
 function exportPdf(){
   const from = document.getElementById('repFrom').value;
-  const to = document.getElementById('repTo').value;
+  const to   = document.getElementById('repTo').value;
   const type = document.getElementById('repType').value;
   let path = '/export/logs-pdf?';
   if (from) path += 'from=' + from + '&';
-  if (to) path += 'to=' + to + '&';
+  if (to)   path += 'to='   + to   + '&';
   if (type && type !== 'all') path += 'type=' + type;
   const filename = buildReportFilename(type, from, to, 'pdf');
   downloadWithAuth(path, filename);
