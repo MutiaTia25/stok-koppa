@@ -8,38 +8,45 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="KOPPA STOK">
 <title>KOPPA STOK | Sistem Manajemen Stok</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="theme-color" content="#1a56db">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 /* ===== DESIGN TOKENS ===== */
 :root {
-  --primary: #2563eb;
-  --primary-dark: #1d4ed8;
-  --primary-darker: #1e3a8a;
-  --primary-light: #eff6ff;
-  --primary-mid: #3b82f6;
-  --green: #16a34a;
-  --green-light: #f0fdf4;
-  --green-mid: #22c55e;
-  --red: #dc2626;
-  --red-light: #fef2f2;
-  --orange: #d97706;
-  --orange-light: #fffbeb;
-  --purple: #7c3aed;
-  --purple-light: #f5f3ff;
-  --gray: #64748b;
-  --gray-light: #f8fafc;
-  --bg: #f1f5f9;
-  --card: #ffffff;
-  --border: #e2e8f0;
-  --text: #0f172a;
-  --text-muted: #475569;
-  --sidebar-w: 240px;
-  --topbar-h: 64px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
-  --shadow: 0 4px 12px rgba(0,0,0,.06), 0 2px 4px rgba(0,0,0,.04);
-  --shadow-lg: 0 10px 30px rgba(0,0,0,.08), 0 4px 8px rgba(0,0,0,.04);
+  --primary:        #1a56db;
+  --primary-dark:   #1240a8;
+  --primary-darker: #0c2d6b;
+  --primary-light:  #ebf2ff;
+  --primary-mid:    #3b7ef8;
+  --green:          #0f9b52;
+  --green-light:    #e8faf1;
+  --green-mid:      #22c55e;
+  --red:            #e02424;
+  --red-light:      #fdf2f2;
+  --orange:         #d97706;
+  --orange-light:   #fffbeb;
+  --purple:         #7c3aed;
+  --purple-light:   #f5f3ff;
+  --gray:           #6b7280;
+  --gray-light:     #f9fafb;
+  --bg:             #f3f5f9;
+  --card:           #ffffff;
+  --border:         #e5e7eb;
+  --text:           #111827;
+  --text-muted:     #4b5563;
+  --sidebar-w:      250px;
+  --topbar-h:       62px;
+  --radius:         10px;
+  --radius-lg:      14px;
+  --radius-xl:      18px;
+  --shadow-sm:      0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.05);
+  --shadow:         0 4px 14px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.04);
+  --shadow-lg:      0 10px 32px rgba(0,0,0,.09), 0 4px 8px rgba(0,0,0,.05);
+  --shadow-xl:      0 20px 60px rgba(0,0,0,.14), 0 6px 12px rgba(0,0,0,.06);
 }
 
 /* ===== RESET ===== */
@@ -49,15 +56,12 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
-input, select, button, textarea {
-  font-family: inherit;
-  font-size: inherit;
-}
+input, select, button, textarea { font-family: inherit; font-size: inherit; }
 
 /* ===== LOGIN ===== */
 #loginScreen {
@@ -66,62 +70,81 @@ input, select, button, textarea {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: linear-gradient(145deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%);
+  background: linear-gradient(150deg, #0a1628 0%, #0f2456 45%, #1a4ab8 100%);
   position: relative;
   overflow: hidden;
 }
 #loginScreen::before {
   content: '';
   position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle at 30% 30%, rgba(59,130,246,.15) 0%, transparent 60%),
-              radial-gradient(circle at 70% 70%, rgba(99,102,241,.1) 0%, transparent 60%);
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 20%, rgba(59,126,248,.18) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 80% at 80% 80%, rgba(99,102,241,.12) 0%, transparent 60%);
   pointer-events: none;
+}
+#loginScreen::after {
+  content: '';
+  position: absolute;
+  top: -120px; right: -120px;
+  width: 400px; height: 400px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06);
 }
 
 .login-box {
-  background: var(--card);
-  padding: 40px 36px;
-  border-radius: 20px;
+  background: #fff;
+  padding: 44px 40px;
+  border-radius: 22px;
   width: 100%;
-  max-width: 400px;
-  box-shadow: 0 32px 64px rgba(0,0,0,.3);
+  max-width: 410px;
+  box-shadow: 0 40px 80px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.08);
   position: relative;
+  z-index: 1;
 }
-.login-logo {
-  width: 64px; height: 64px;
-  background: linear-gradient(135deg, var(--primary-dark), var(--primary-mid));
-  border-radius: 16px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 28px;
-  margin: 0 auto 16px;
-  box-shadow: 0 8px 20px rgba(29,78,216,.3);
+
+/* LOGO MARK — SVG boxes stacked */
+.login-logo-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 24px;
 }
+.login-logo-mark {
+  width: 68px; height: 68px;
+  position: relative;
+  margin-bottom: 14px;
+}
+.login-logo-mark svg { width: 68px; height: 68px; }
+
 .login-box h2 {
-  margin: 0 0 4px;
+  margin: 0 0 3px;
   text-align: center;
   color: var(--text);
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -.3px;
+  font-size: 23px;
+  font-weight: 900;
+  letter-spacing: -.5px;
 }
 .login-sub {
   text-align: center;
   color: var(--gray);
   font-size: 13px;
-  margin-bottom: 28px;
+  margin-bottom: 30px;
+}
+.login-divider {
+  height: 1px;
+  background: var(--border);
+  margin-bottom: 24px;
 }
 .login-box label {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   color: var(--text-muted);
   display: block;
   margin-bottom: 6px;
   text-transform: uppercase;
-  letter-spacing: .5px;
+  letter-spacing: .6px;
 }
 .login-box input {
   width: 100%;
@@ -133,29 +156,32 @@ input, select, button, textarea {
   outline: none;
   transition: border-color .2s, box-shadow .2s;
   background: var(--gray-light);
+  color: var(--text);
 }
 .login-box input:focus {
   border-color: var(--primary);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+  box-shadow: 0 0 0 3.5px rgba(26,86,219,.13);
 }
 .login-box button {
   width: 100%;
-  padding: 13px;
+  padding: 14px;
   margin-top: 4px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-mid));
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-mid) 100%);
   color: #fff;
   border: none;
   border-radius: var(--radius);
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: transform .15s, box-shadow .15s;
-  box-shadow: 0 4px 12px rgba(37,99,235,.3);
+  transition: transform .15s, box-shadow .15s, filter .15s;
+  box-shadow: 0 4px 16px rgba(26,86,219,.35);
+  letter-spacing: .2px;
 }
-.login-box button:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37,99,235,.4); }
-.login-box button:active { transform: translateY(0); }
-.error-msg { color: var(--red); font-size: 13px; text-align: center; margin-top: 8px; min-height: 18px; font-weight: 500; }
+.login-box button:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(26,86,219,.42); }
+.login-box button:active { transform: translateY(0); filter: brightness(.97); }
+.error-msg { color: var(--red); font-size: 13px; text-align: center; margin-top: 10px; min-height: 18px; font-weight: 600; }
+.login-footer { text-align: center; font-size: 11px; color: #aab; margin-top: 20px; }
 
 /* ===== APP SHELL ===== */
 #app { display: none; }
@@ -168,70 +194,71 @@ input, select, button, textarea {
   justify-content: space-between;
   align-items: center;
   padding: 0 20px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 1px 0 var(--border), var(--shadow-sm);
   position: sticky;
   top: 0;
   z-index: 100;
-  border-bottom: 1px solid var(--border);
 }
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
   font-size: 17px;
-  font-weight: 800;
+  font-weight: 900;
   color: var(--text);
-  letter-spacing: -.3px;
+  letter-spacing: -.4px;
   text-decoration: none;
+  user-select: none;
 }
 .brand .logo-icon {
-  width: 36px; height: 36px;
-  background: linear-gradient(135deg, var(--primary-dark), var(--primary-mid));
-  border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 18px;
+  width: 38px; height: 38px;
   flex-shrink: 0;
 }
-.brand-text { display: block; }
+.brand .logo-icon svg { width: 38px; height: 38px; }
+.brand-text { display: block; font-size: 16px; }
+.brand-text span { color: var(--primary); }
 
 .user-info { display: flex; align-items: center; gap: 8px; }
-.user-meta { text-align: right; line-height: 1.3; }
+.user-meta { text-align: right; line-height: 1.35; }
 .user-meta .name { font-weight: 700; font-size: 13px; color: var(--text); }
 .user-meta .role { font-size: 11px; color: var(--gray); text-transform: uppercase; letter-spacing: .5px; }
 .avatar {
-  width: 36px; height: 36px;
+  width: 38px; height: 38px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), var(--primary-mid));
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary-mid));
   color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 15px;
   flex-shrink: 0;
+  border: 2px solid var(--primary-light);
 }
 .icon-btn {
   background: var(--gray-light);
   border: 1px solid var(--border);
   width: 36px; height: 36px;
-  border-radius: 10px;
+  border-radius: 9px;
   cursor: pointer;
   font-size: 15px;
   display: flex; align-items: center; justify-content: center;
-  transition: background .15s;
+  transition: background .15s, transform .1s;
   flex-shrink: 0;
+  color: var(--text-muted);
 }
-.icon-btn:hover { background: var(--border); }
+.icon-btn:hover { background: var(--border); transform: scale(1.05); }
 
-/* ===== HAMBURGER (mobile) ===== */
+/* ===== HAMBURGER ===== */
 .hamburger {
   display: none;
   background: var(--gray-light);
   border: 1px solid var(--border);
   width: 36px; height: 36px;
-  border-radius: 10px;
+  border-radius: 9px;
   cursor: pointer;
   align-items: center; justify-content: center;
   font-size: 18px;
   flex-shrink: 0;
+  color: var(--text-muted);
 }
 
 /* ===== LAYOUT ===== */
@@ -245,7 +272,7 @@ input, select, button, textarea {
   width: var(--sidebar-w);
   background: var(--card);
   border-right: 1px solid var(--border);
-  padding: 16px 0;
+  padding: 12px 0 24px;
   flex-shrink: 0;
   overflow-y: auto;
   height: calc(100vh - var(--topbar-h));
@@ -253,16 +280,16 @@ input, select, button, textarea {
   top: var(--topbar-h);
 }
 .sidebar-section {
-  padding: 0 12px;
-  margin-bottom: 4px;
+  padding: 0 10px;
+  margin-bottom: 2px;
 }
 .sidebar-label {
   font-size: 10px;
   font-weight: 700;
-  color: #94a3b8;
+  color: #9ca3af;
   text-transform: uppercase;
-  letter-spacing: .8px;
-  padding: 10px 10px 4px;
+  letter-spacing: .9px;
+  padding: 12px 12px 5px;
 }
 .sidebar button {
   display: flex;
@@ -270,16 +297,17 @@ input, select, button, textarea {
   gap: 10px;
   width: 100%;
   text-align: left;
-  padding: 10px 12px;
+  padding: 9px 12px;
   border: none;
   background: none;
-  font-size: 14px;
+  font-size: 13.5px;
   cursor: pointer;
   color: var(--text-muted);
-  border-radius: 10px;
-  margin-bottom: 2px;
+  border-radius: var(--radius);
+  margin-bottom: 1px;
   font-weight: 500;
-  transition: background .15s, color .15s;
+  transition: background .12s, color .12s;
+  line-height: 1.4;
 }
 .sidebar button:hover { background: var(--gray-light); color: var(--text); }
 .sidebar button.active {
@@ -287,16 +315,28 @@ input, select, button, textarea {
   color: var(--primary-dark);
   font-weight: 700;
 }
-.sidebar .icon { width: 22px; text-align: center; font-size: 16px; flex-shrink: 0; }
+.sidebar button.active .sb-icon-wrap {
+  background: var(--primary);
+  color: #fff;
+}
+.sb-icon-wrap {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  background: var(--gray-light);
+  transition: background .12s, color .12s;
+}
+.sidebar button:hover .sb-icon-wrap { background: #e5e7eb; }
 
-/* Sidebar overlay for mobile */
 .sidebar-overlay {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.4);
+  background: rgba(0,0,0,.42);
   z-index: 90;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(3px);
 }
 .sidebar-overlay.active { display: block; }
 
@@ -315,16 +355,16 @@ input, select, button, textarea {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
   flex-wrap: wrap;
   gap: 12px;
 }
 .page-header h2 {
   margin: 0 0 3px;
-  font-size: 22px;
+  font-size: 21px;
   font-weight: 800;
   color: var(--text);
-  letter-spacing: -.3px;
+  letter-spacing: -.4px;
 }
 .page-header .subtitle {
   font-size: 13px;
@@ -338,36 +378,46 @@ input, select, button, textarea {
   align-items: center;
 }
 
-/* ===== CARDS ===== */
+/* ===== STAT CARDS ===== */
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
   gap: 14px;
   margin-bottom: 22px;
 }
 .card {
   background: var(--card);
-  padding: 18px;
+  padding: 20px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
   transition: transform .15s, box-shadow .15s;
+  position: relative;
+  overflow: hidden;
+}
+.card::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 70px; height: 70px;
+  border-radius: 0 var(--radius-lg) 0 70px;
+  opacity: .07;
 }
 .card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .card .num {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 900;
   color: var(--text);
-  margin-top: 10px;
-  letter-spacing: -.5px;
+  margin-top: 12px;
+  letter-spacing: -.6px;
   line-height: 1;
 }
-.card .label { font-size: 12px; color: var(--gray); margin-top: 5px; font-weight: 500; }
+.card .label { font-size: 12px; color: var(--gray); margin-top: 6px; font-weight: 500; }
 .card .icon-box {
-  width: 42px; height: 42px;
-  border-radius: 11px;
+  width: 44px; height: 44px;
+  border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 20px;
+  font-size: 21px;
 }
 .icon-blue { background: #dbeafe; }
 .icon-green { background: var(--green-light); }
@@ -381,16 +431,17 @@ input, select, button, textarea {
 .panel {
   background: var(--card);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: 22px;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
   margin-bottom: 16px;
 }
 .panel h3 {
-  margin: 0 0 4px;
+  margin: 0 0 3px;
   font-size: 15px;
   font-weight: 700;
   color: var(--text);
+  display: flex; align-items: center; gap: 7px;
 }
 .panel .subtitle {
   font-size: 12px;
@@ -407,23 +458,23 @@ table {
   font-size: 13px;
 }
 th, td {
-  padding: 11px 13px;
+  padding: 11px 14px;
   text-align: left;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 th {
-  background: var(--gray-light);
-  color: var(--gray);
+  background: #f9fafb;
+  color: #6b7280;
   font-weight: 700;
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: .5px;
+  letter-spacing: .6px;
   position: sticky;
   top: 0;
 }
 tr:last-child td { border-bottom: none; }
-tbody tr:hover td { background: #f8fafc; }
+tbody tr:hover td { background: #f9fafb; }
 .stock-low { color: var(--red); font-weight: 700; }
 .stock-ok { color: var(--green); font-weight: 700; }
 
@@ -431,7 +482,7 @@ tbody tr:hover td { background: #f8fafc; }
 .pill {
   display: inline-flex;
   align-items: center;
-  padding: 3px 9px;
+  padding: 3px 10px;
   border-radius: 20px;
   font-size: 11px;
   font-weight: 700;
@@ -441,14 +492,14 @@ tbody tr:hover td { background: #f8fafc; }
 }
 .pill-green { background: var(--green-light); color: var(--green); }
 .pill-red { background: var(--red-light); color: var(--red); }
-.pill-gray { background: #f1f5f9; color: var(--gray); }
+.pill-gray { background: #f3f4f6; color: var(--gray); }
 .pill-blue { background: var(--primary-light); color: var(--primary); }
 .pill-orange { background: var(--orange-light); color: var(--orange); }
-.badge-admin { background: var(--purple-light); color: var(--purple); }
-.badge-kasir { background: var(--primary-light); color: var(--primary); }
-.badge-active { background: var(--green-light); color: var(--green); }
-.badge-inactive { background: var(--red-light); color: var(--red); }
-.badge-role, .pill { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.badge-admin { background: var(--purple-light); color: var(--purple); border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 700; }
+.badge-kasir { background: var(--primary-light); color: var(--primary); border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 700; }
+.badge-active { background: var(--green-light); color: var(--green); border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 700; }
+.badge-inactive { background: var(--red-light); color: var(--red); border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 700; }
+.badge-role { border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 700; }
 
 /* ===== TOOLBAR ===== */
 .toolbar {
@@ -465,9 +516,12 @@ tbody tr:hover td { background: #f8fafc; }
   background: var(--card);
   color: var(--text);
   outline: none;
-  transition: border-color .2s;
+  transition: border-color .2s, box-shadow .2s;
 }
-.toolbar input:focus, .toolbar select:focus { border-color: var(--primary); }
+.toolbar input:focus, .toolbar select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(26,86,219,.1);
+}
 .toolbar input[type=text], .toolbar input[type=search] { flex: 1; min-width: 160px; }
 
 /* ===== BUTTONS ===== */
@@ -481,40 +535,41 @@ tbody tr:hover td { background: #f8fafc; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: transform .15s, opacity .15s, box-shadow .15s;
+  transition: transform .12s, opacity .15s, box-shadow .15s, filter .12s;
   white-space: nowrap;
   text-decoration: none;
+  letter-spacing: .1px;
 }
 .btn:hover { transform: translateY(-1px); }
-.btn:active { transform: translateY(0); }
-.btn-primary { background: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(37,99,235,.25); }
-.btn-primary:hover { background: var(--primary-dark); box-shadow: 0 4px 12px rgba(37,99,235,.35); }
-.btn-green { background: var(--green); color: #fff; box-shadow: 0 2px 8px rgba(22,163,74,.25); }
-.btn-green:hover { background: #15803d; }
-.btn-red { background: var(--red); color: #fff; box-shadow: 0 2px 8px rgba(220,38,38,.25); }
-.btn-red:hover { background: #b91c1c; }
-.btn-gray { background: #e2e8f0; color: #334155; }
-.btn-gray:hover { background: #cbd5e1; }
+.btn:active { transform: translateY(0); filter: brightness(.95); }
+.btn-primary { background: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(26,86,219,.28); }
+.btn-primary:hover { background: var(--primary-dark); box-shadow: 0 4px 14px rgba(26,86,219,.38); }
+.btn-green { background: var(--green); color: #fff; box-shadow: 0 2px 8px rgba(15,155,82,.25); }
+.btn-green:hover { background: #0a7d41; }
+.btn-red { background: var(--red); color: #fff; box-shadow: 0 2px 8px rgba(224,36,36,.25); }
+.btn-red:hover { background: #c51c1c; }
+.btn-gray { background: #e5e7eb; color: #374151; }
+.btn-gray:hover { background: #d1d5db; }
 .btn-outline { background: var(--card); border: 1.5px solid var(--border); color: var(--text); }
 .btn-outline:hover { background: var(--gray-light); }
 .btn-sm { padding: 6px 11px; font-size: 12px; }
-.btn-lg { padding: 13px 22px; font-size: 15px; }
+.btn-lg { padding: 13px 24px; font-size: 15px; }
 .btn-icon { width: 34px; height: 34px; padding: 0; justify-content: center; border-radius: 8px; }
 
 /* ===== FORM / INPUTS ===== */
 .form-group { margin-bottom: 12px; }
 .form-group label {
   display: block;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   color: var(--text-muted);
   margin-bottom: 6px;
   text-transform: uppercase;
-  letter-spacing: .4px;
+  letter-spacing: .5px;
 }
 .form-control {
   width: 100%;
-  padding: 10px 12px;
+  padding: 10px 13px;
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
   background: var(--gray-light);
@@ -526,7 +581,7 @@ tbody tr:hover td { background: #f8fafc; }
 .form-control:focus {
   border-color: var(--primary);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+  box-shadow: 0 0 0 3px rgba(26,86,219,.1);
 }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-vertical { display: flex; flex-direction: column; gap: 0; }
@@ -537,53 +592,54 @@ tbody tr:hover td { background: #f8fafc; }
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(15,23,42,.5);
+  background: rgba(10,16,30,.55);
   align-items: center;
   justify-content: center;
   z-index: 200;
   padding: 16px;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(5px);
 }
 .modal-overlay.active { display: flex; }
 .modal {
   background: var(--card);
-  padding: 24px;
-  border-radius: var(--radius-lg);
+  padding: 26px;
+  border-radius: var(--radius-xl);
   width: 100%;
-  max-width: 480px;
+  max-width: 490px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: var(--shadow-lg);
-  animation: modalIn .2s ease;
+  box-shadow: var(--shadow-xl);
+  animation: modalIn .2s cubic-bezier(.34,1.56,.64,1);
 }
-@keyframes modalIn { from { opacity: 0; transform: scale(.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-.modal h3 { margin: 0 0 4px; font-size: 17px; font-weight: 800; }
-.modal .modal-sub { font-size: 12px; color: var(--gray); margin-bottom: 16px; }
+@keyframes modalIn { from { opacity: 0; transform: scale(.94) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+.modal h3 { margin: 0 0 4px; font-size: 17px; font-weight: 800; letter-spacing: -.2px; }
+.modal .modal-sub { font-size: 12px; color: var(--gray); margin-bottom: 18px; }
 .modal label {
   display: block;
-  font-size: 12px;
+  font-size: 11.5px;
   margin: 12px 0 5px;
   color: var(--text-muted);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: .4px;
+  letter-spacing: .5px;
 }
 .modal input, .modal select, .modal textarea {
   width: 100%;
-  padding: 10px 12px;
+  padding: 10px 13px;
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
   font-size: 14px;
   background: var(--gray-light);
   outline: none;
-  transition: border-color .2s, background .2s;
+  transition: border-color .2s, background .2s, box-shadow .2s;
+  color: var(--text);
 }
 .modal input:focus, .modal select:focus, .modal textarea:focus {
   border-color: var(--primary);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+  box-shadow: 0 0 0 3px rgba(26,86,219,.1);
 }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 .modal-section-title {
   font-size: 11px;
   font-weight: 800;
@@ -593,12 +649,13 @@ tbody tr:hover td { background: #f8fafc; }
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 6px;
 }
 
 /* ===== MISC ===== */
 .type-in { color: var(--green); font-weight: 700; }
 .type-out { color: var(--red); font-weight: 700; }
-.empty { text-align: center; color: var(--gray); padding: 40px 20px; font-size: 14px; }
+.empty { text-align: center; color: var(--gray); padding: 44px 20px; font-size: 14px; }
 .chart-wrap { position: relative; height: 220px; }
 
 /* ===== TOAST ===== */
@@ -606,28 +663,29 @@ tbody tr:hover td { background: #f8fafc; }
   position: fixed;
   bottom: 24px;
   right: 24px;
-  background: #0f172a;
+  background: #111827;
   color: #fff;
-  padding: 12px 18px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  font-weight: 500;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
   z-index: 999;
   opacity: 0;
-  transform: translateY(10px);
-  transition: opacity .25s, transform .25s;
-  box-shadow: var(--shadow-lg);
+  transform: translateY(12px) scale(.97);
+  transition: opacity .25s, transform .25s cubic-bezier(.34,1.56,.64,1);
+  box-shadow: 0 8px 24px rgba(0,0,0,.2);
   max-width: calc(100vw - 48px);
   pointer-events: none;
+  display: flex; align-items: center; gap: 8px;
 }
-.toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.toast.show { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
 .toast.error { background: var(--red); }
 .toast.success { background: var(--green); }
 
 /* ===== SCAN INFO BOX ===== */
 .scan-box {
   background: var(--primary-light);
-  border: 2px solid var(--primary);
+  border: 1.5px solid #bfd2f9;
   border-radius: var(--radius);
   padding: 14px 16px;
   display: flex;
@@ -659,84 +717,6 @@ tbody tr:hover td { background: #f8fafc; }
 }
 .bulk-bar.show { display: flex; }
 
-/* ===== RESPONSIVE BREAKPOINTS ===== */
-
-/* TABLET: 900px and below */
-@media (max-width: 900px) {
-  .grid-2 { grid-template-columns: 1fr; }
-  .cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-  :root { --sidebar-w: 200px; }
-}
-
-/* MOBILE: 768px and below */
-@media (max-width: 768px) {
-  :root { --topbar-h: 56px; --sidebar-w: 260px; }
-
-  /* Hide user meta text on mobile */
-  .user-meta { display: none; }
-  .brand-text { display: none; }
-  .hamburger { display: flex; }
-
-  /* Sidebar becomes off-canvas drawer on mobile */
-  .sidebar {
-    position: fixed;
-    left: -100%;
-    top: var(--topbar-h);
-    height: calc(100vh - var(--topbar-h));
-    z-index: 95;
-    transition: left .25s ease;
-    box-shadow: var(--shadow-lg);
-  }
-  .sidebar.open { left: 0; }
-
-  /* Content takes full width */
-  .content { padding: 16px; }
-
-  /* Cards stack better */
-  .cards { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .card { padding: 14px; }
-  .card .num { font-size: 22px; }
-
-  /* Tables scroll horizontally */
-  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-
-  /* Page headers stack vertically */
-  .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
-  .page-header h2 { font-size: 18px; }
-  .page-header-actions { width: 100%; }
-  .page-header-actions .btn { flex: 1; justify-content: center; }
-
-  /* Toolbar stacks */
-  .toolbar { flex-direction: column; align-items: stretch; }
-  .toolbar input, .toolbar select, .toolbar button { width: 100%; }
-
-  /* Form rows stack */
-  .form-row { grid-template-columns: 1fr; }
-
-  /* Buttons full width in toolbars */
-  .toolbar .btn { width: 100%; justify-content: center; }
-
-  /* Toast at bottom center */
-  .toast { bottom: 16px; right: 16px; left: 16px; text-align: center; max-width: none; }
-
-  /* Modals full width */
-  .modal { padding: 20px 16px; }
-  .modal-overlay { padding: 12px; align-items: flex-end; }
-  .modal { border-radius: 16px 16px 0 0; max-height: 92vh; }
-}
-
-/* SMALL MOBILE: 480px and below */
-@media (max-width: 480px) {
-  .cards { grid-template-columns: 1fr 1fr; gap: 8px; }
-  .content { padding: 12px; }
-  .panel { padding: 14px; }
-  .card .icon-box { width: 36px; height: 36px; font-size: 16px; }
-
-  /* Topbar compact */
-  .topbar { padding: 0 12px; }
-  .brand .logo-icon { width: 32px; height: 32px; font-size: 16px; }
-}
-
 /* ===== OPNAME SPECIFIC ===== */
 .opname-search-wrap { position: relative; }
 #opnameSearchResults {
@@ -753,15 +733,65 @@ tbody tr:hover td { background: #f8fafc; }
   display: none;
 }
 
-/* ===== SCROLL IMPROVEMENTS ===== */
+/* ===== RESPONSIVE ===== */
+@media (max-width: 900px) {
+  .grid-2 { grid-template-columns: 1fr; }
+  .cards { grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); }
+  :root { --sidebar-w: 210px; }
+}
+
+@media (max-width: 768px) {
+  :root { --topbar-h: 56px; --sidebar-w: 265px; }
+  .user-meta { display: none; }
+  .brand-text { display: none; }
+  .hamburger { display: flex; }
+  .sidebar {
+    position: fixed;
+    left: -100%;
+    top: var(--topbar-h);
+    height: calc(100vh - var(--topbar-h));
+    z-index: 95;
+    transition: left .25s cubic-bezier(.25,.8,.25,1);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar.open { left: 0; }
+  .content { padding: 16px; }
+  .cards { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .card { padding: 15px; }
+  .card .num { font-size: 24px; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .page-header h2 { font-size: 18px; }
+  .page-header-actions { width: 100%; }
+  .page-header-actions .btn { flex: 1; justify-content: center; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .toolbar input, .toolbar select, .toolbar button { width: 100%; }
+  .form-row { grid-template-columns: 1fr; }
+  .toolbar .btn { width: 100%; justify-content: center; }
+  .toast { bottom: 16px; right: 16px; left: 16px; text-align: center; max-width: none; justify-content: center; }
+  .modal { padding: 20px 16px; }
+  .modal-overlay { padding: 10px; align-items: flex-end; }
+  .modal { border-radius: 18px 18px 0 0; max-height: 93vh; }
+}
+
+@media (max-width: 480px) {
+  .cards { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .content { padding: 12px; }
+  .panel { padding: 16px; }
+  .card .icon-box { width: 38px; height: 38px; font-size: 17px; }
+  .topbar { padding: 0 12px; }
+  .brand .logo-icon svg { width: 34px; height: 34px; }
+}
+
+/* ===== SCROLL ===== */
 * { -webkit-overflow-scrolling: touch; }
 .content { scroll-behavior: smooth; }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
-/* ===== TOUCH IMPROVEMENTS ===== */
+/* ===== TOUCH ===== */
 .btn, .sidebar button, .icon-btn, .hamburger {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
@@ -769,6 +799,24 @@ tbody tr:hover td { background: #f8fafc; }
 input[type="number"] { appearance: textfield; }
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ===== SCAN FIELD FOCUS ===== */
+.scan-field {
+  flex: 1;
+  padding: 12px 14px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 15px;
+  outline: none;
+  transition: border-color .2s, box-shadow .2s, background .2s;
+  background: var(--gray-light);
+  color: var(--text);
+}
+.scan-field:focus {
+  border-color: var(--primary);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(26,86,219,.1);
+}
 </style>
 </head>
 <body>
@@ -776,9 +824,30 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 <!-- ===== LOGIN ===== -->
 <div id="loginScreen">
   <div class="login-box">
-    <div class="login-logo">📦</div>
-    <h2>KOPPA STOK</h2>
-    <div class="login-sub">Sistem Manajemen Stok Minimarket</div>
+    <div class="login-logo-wrap">
+      <!-- KOPPA STOK logo mark: stacked box grid -->
+      <div class="login-logo-mark">
+        <svg viewBox="0 0 68 68" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="lg1" x1="0" y1="0" x2="68" y2="68" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#1240a8"/>
+              <stop offset="100%" stop-color="#3b7ef8"/>
+            </linearGradient>
+          </defs>
+          <rect width="68" height="68" rx="16" fill="url(#lg1)"/>
+          <!-- Grid of boxes representing inventory -->
+          <rect x="10" y="10" width="19" height="19" rx="4" fill="white" fill-opacity=".9"/>
+          <rect x="33" y="10" width="25" height="19" rx="4" fill="white" fill-opacity=".5"/>
+          <rect x="10" y="33" width="25" height="19" rx="4" fill="white" fill-opacity=".5"/>
+          <rect x="39" y="33" width="19" height="19" rx="4" fill="white" fill-opacity=".9"/>
+          <!-- Small accent dot -->
+          <circle cx="54" cy="16" r="4" fill="#7dd3fc" fill-opacity=".9"/>
+        </svg>
+      </div>
+      <h2>KOPPA STOK</h2>
+      <div class="login-sub">Sistem Manajemen Stok Minimarket</div>
+    </div>
+    <div class="login-divider"></div>
     <label>Username</label>
     <input type="text" id="loginUsername" placeholder="Masukkan username" autocomplete="username">
     <label>Password</label>
@@ -786,6 +855,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
       onkeydown="if(event.key==='Enter') login()">
     <button onclick="login()">Masuk ke Sistem</button>
     <div class="error-msg" id="loginError"></div>
+    <div class="login-footer">© 2025 KOPPA STOK · Sistem Inventori Profesional</div>
   </div>
 </div>
 
@@ -797,8 +867,23 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
     <div style="display:flex; align-items:center; gap:10px;">
       <button class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()" title="Menu">☰</button>
       <div class="brand">
-        <div class="logo-icon">📦</div>
-        <span class="brand-text">KOPPA STOK</span>
+        <div class="logo-icon">
+          <svg viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="lg2" x1="0" y1="0" x2="38" y2="38" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#1240a8"/>
+                <stop offset="100%" stop-color="#3b7ef8"/>
+              </linearGradient>
+            </defs>
+            <rect width="38" height="38" rx="9" fill="url(#lg2)"/>
+            <rect x="5" y="5" width="11" height="11" rx="2.5" fill="white" fill-opacity=".95"/>
+            <rect x="19" y="5" width="14" height="11" rx="2.5" fill="white" fill-opacity=".5"/>
+            <rect x="5" y="19" width="14" height="11" rx="2.5" fill="white" fill-opacity=".5"/>
+            <rect x="22" y="19" width="11" height="11" rx="2.5" fill="white" fill-opacity=".95"/>
+            <circle cx="32" cy="8" r="2.5" fill="#7dd3fc" fill-opacity=".9"/>
+          </svg>
+        </div>
+        <span class="brand-text">KOPPA <span>STOK</span></span>
       </div>
     </div>
     <div class="user-info">
@@ -833,7 +918,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         <div class="cards" id="dashCards"></div>
         <div class="grid-2">
           <div class="panel">
-            <h3>Stok per Kategori</h3>
+            <h3>📊 Stok per Kategori</h3>
             <div class="chart-wrap"><canvas id="categoryChart"></canvas></div>
           </div>
           <div class="panel" id="dashAdminPanel">
@@ -898,56 +983,41 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         <div class="panel">
           <h3>📦 Form Transaksi Stok Office</h3>
           <div class="subtitle">Scan barcode atau ketik nama produk untuk melakukan transaksi</div>
-
-          <!-- Input scan / cari -->
           <div style="display:flex; gap:8px; align-items:center;">
             <input type="text" id="scanBarcode" placeholder="📷 Scan barcode atau ketik nama produk..."
-              autocomplete="off"
-              style="flex:1; padding:12px 14px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;"
-              onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#e2e8f0'">
+              autocomplete="off" class="scan-field"
+              onfocus="this.style.borderColor='var(--primary)'; this.style.background='#fff'; this.style.boxShadow='0 0 0 3px rgba(26,86,219,.1)';"
+              onblur="this.style.borderColor=''; this.style.background=''; this.style.boxShadow='';">
             <button type="button" class="btn btn-primary" onclick="startBarcodeScanner()">📷 Kamera</button>
             <button type="button" class="btn btn-gray" onclick="resetStockForm()">✕</button>
           </div>
-
-          <!-- Dropdown hasil pencarian -->
-          <div id="stockSearchResults" style="display:none; margin-top:4px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; max-height:260px; overflow-y:auto; box-shadow:0 6px 16px rgba(0,0,0,.10);"></div>
-
-          <!-- Form qty — muncul setelah produk dipilih -->
+          <div id="stockSearchResults" style="display:none; margin-top:4px; border:1.5px solid var(--border); border-radius:var(--radius); background:#fff; max-height:260px; overflow-y:auto; box-shadow:var(--shadow-lg);"></div>
           <div id="stockInlineForm" style="display:none;"></div>
-
-          <!-- Hidden select untuk kompatibilitas fungsi lama -->
           <select id="stockProductSelect" style="display:none;"></select>
-          <div id="reader" style="display:none; width:100%; max-width:500px; margin-top:10px; border-radius:10px; overflow:hidden;"></div>
+          <div id="reader" style="display:none; width:100%; max-width:500px; margin-top:10px; border-radius:var(--radius); overflow:hidden;"></div>
         </div>
 
         <div class="panel">
-          <h3>🛒 Transfer Stok Office → Mess</h3>
+          <h3>🔄 Transfer Stok Office → Mess</h3>
           <div style="position:relative;">
             <div style="display:flex; gap:8px; align-items:center;">
               <input type="text" id="transferScanInput"
                 placeholder="🔍 Ketik nama / barcode / SKU produk, atau scan barcode..."
-                autocomplete="off"
-                style="flex:1; padding:11px 14px; border:2px solid #3b82f6; border-radius:10px; font-size:14px; outline:none;">
+                autocomplete="off" class="scan-field"
+                style="border-color: var(--primary);">
               <button class="btn btn-gray" onclick="startTransferBarcodeScanner()" title="Scan kamera" style="white-space:nowrap; padding:10px 14px;">
                 📷 Scan
               </button>
             </div>
-            <!-- Dropdown hasil pencarian transfer -->
-            <div id="transferSearchResults" style="display:none; position:absolute; left:0; right:0; z-index:100; margin-top:4px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; max-height:260px; overflow-y:auto; box-shadow:0 6px 16px rgba(0,0,0,.10);"></div>
+            <div id="transferSearchResults" style="display:none; position:absolute; left:0; right:0; z-index:100; margin-top:4px; border:1.5px solid var(--border); border-radius:var(--radius); background:#fff; max-height:260px; overflow-y:auto; box-shadow:var(--shadow-lg);"></div>
           </div>
-
-          <!-- Scanner kamera transfer -->
-          <div id="transferReader" style="display:none; width:100%; max-width:500px; margin-top:10px; border-radius:10px; overflow:hidden;"></div>
-
-          <!-- Info stok & form — muncul setelah produk dipilih -->
+          <div id="transferReader" style="display:none; width:100%; max-width:500px; margin-top:10px; border-radius:var(--radius); overflow:hidden;"></div>
           <div id="transferInlineForm" style="display:none;"></div>
-
-          <!-- Hidden select & hidden product_id untuk kompatibilitas submitTransfer -->
           <select id="transferProductSelect" style="display:none;"></select>
         </div>
 
         <div class="panel">
-          <h3>Riwayat Stok Office</h3>
+          <h3>📋 Riwayat Stok Office</h3>
           <div class="toolbar">
             <input type="date" id="logFrom" onchange="loadLogs()">
             <input type="date" id="logTo" onchange="loadLogs()">
@@ -966,7 +1036,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         </div>
 
         <div class="panel">
-          <h3>Riwayat Distribusi Office → Mess</h3>
+          <h3>🚚 Riwayat Distribusi Office → Mess</h3>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Waktu</th><th>Produk</th><th>Kategori</th><th>Arah</th><th>Jumlah</th><th>Catatan</th><th>Petugas</th></tr></thead>
@@ -1030,10 +1100,9 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
             <div style="display:flex; gap:8px; align-items:center;">
               <input id="scanBarcodeOpname" type="text"
                 placeholder="Scan barcode atau ketik nama produk..."
-                autocomplete="off"
-                style="flex:1; padding:12px 14px; border:2px solid var(--border); border-radius:var(--radius); font-size:15px; outline:none; background:var(--gray-light);"
-                onfocus="this.style.borderColor='var(--primary)'; this.style.background='#fff';"
-                onblur="this.style.borderColor='var(--border)'; this.style.background='var(--gray-light)';"/>
+                autocomplete="off" class="scan-field"
+                onfocus="this.style.borderColor='var(--primary)'; this.style.background='#fff'; this.style.boxShadow='0 0 0 3px rgba(26,86,219,.1)';"
+                onblur="this.style.borderColor=''; this.style.background=''; this.style.boxShadow='';"/>
               <button class="btn btn-primary" onclick="startOpnameScanner()">📷 Kamera</button>
               <button class="btn btn-gray btn-icon" onclick="resetOpnameForm()">✕</button>
             </div>
@@ -1156,7 +1225,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         <label>Lokasi Default</label>
         <select id="location">
           <option value="office">MIOF / Office</option>
-          <option value="mess">MIPS / Mess</option>
+          <option value="mess">MIPL / Mess</option>
         </select>
       </div>
     </div>
@@ -1184,7 +1253,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         <input type="number" id="productWarehouseMax" min="0" value="0" oninput="document.getElementById('productMessMax').value=this.value">
       </div>
     </div>
-    <div class="modal-section-title">🛒 Mess / Rak Toko (MIPS)</div>
+    <div class="modal-section-title">🛒 MIPL / Mess (Rak Toko)</div>
     <label id="displayStockLabel">Stok Mess Saat Ini</label>
     <input type="number" id="productMessStock" min="0" value="0">
     <small style="color:var(--gray); font-size:11px;">Ubah stok lewat Transfer Stok</small>
@@ -1265,7 +1334,6 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 
 <div class="toast" id="toast"></div>
 
-<!-- SIDEBAR TOGGLE SCRIPT (inline, needed before app.js) -->
 <script>
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebarMenu');
@@ -1277,7 +1345,6 @@ function closeSidebar() {
   document.getElementById('sidebarMenu').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('active');
 }
-// Close sidebar on page navigation (mobile)
 document.addEventListener('click', function(e) {
   if (e.target.closest('#sidebarMenu button')) {
     if (window.innerWidth <= 768) closeSidebar();
@@ -1287,5 +1354,34 @@ document.addEventListener('click', function(e) {
 
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="app.js"></script>
+<script>
+// ===== PWA: Register Service Worker =====
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(reg => console.log('[PWA] Service Worker aktif:', reg.scope))
+      .catch(err => console.warn('[PWA] Service Worker gagal:', err));
+  });
+}
+
+// ===== OFFLINE BANNER =====
+const offlineBanner = document.createElement('div');
+offlineBanner.id = 'offlineBanner';
+offlineBanner.innerHTML = '📵 Tidak ada koneksi internet — Menampilkan data terakhir';
+offlineBanner.style.cssText = `
+  display:none; position:fixed; top:0; left:0; right:0; z-index:9999;
+  background:#f59e0b; color:#fff; text-align:center;
+  padding:10px 16px; font-size:13px; font-weight:700;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+`;
+document.body.appendChild(offlineBanner);
+
+function updateOnlineStatus() {
+  offlineBanner.style.display = navigator.onLine ? 'none' : 'block';
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+</script>
 </body>
 </html>
