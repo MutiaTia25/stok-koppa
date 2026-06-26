@@ -934,29 +934,110 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
 // ===== EXPORT TO EXCEL: DATA PRODUK =====
 app.get('/api/export/products', authMiddleware, async (req, res) => {
   const products = db.prepare(`
-    SELECT p.name, p.sku, c.name as category, p.price,
+    SELECT p.default_location as lokasi, p.barcode, p.name, p.sku, c.name as category, p.price,
            p.warehouse_stock, p.display_stock,
            (p.warehouse_stock + p.display_stock) as total_stock,
-           p.warehouse_min, p.display_min
+           p.warehouse_min, p.warehouse_max, p.display_min, p.display_max, p.unit
     FROM products p JOIN categories c ON c.id=p.category_id ORDER BY c.name, p.name
   `).all();
 
   const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'KOPPA STOK';
+
   const sheet = workbook.addWorksheet('Data Produk');
+
+  // ---- Title block ----
+  sheet.mergeCells('A1:M1');
+  const titleCell = sheet.getCell('A1');
+  titleCell.value = 'DATA PRODUK KOPPA STOK';
+  titleCell.font = { size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0C2D6B' } };
+  sheet.getRow(1).height = 36;
+
+  sheet.mergeCells('A2:M2');
+  const subCell = sheet.getCell('A2');
+  subCell.value = `Tanggal Cetak : ${new Date().toLocaleString('id-ID')}   |   Total Produk : ${products.length}`;
+  subCell.font = { size: 10, italic: true, color: { argb: 'FF1A56DB' } };
+  subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F0FE' } };
+  sheet.getRow(2).height = 20;
+
+  // ---- Column definitions (row 3) ----
   sheet.columns = [
-    { header: 'Nama Produk', key: 'name', width: 30 },
-    { header: 'SKU', key: 'sku', width: 15 },
-    { header: 'Kategori', key: 'category', width: 18 },
-    { header: 'Harga', key: 'price', width: 15 },
-    { header: 'Stok Office', key: 'warehouse_stock', width: 14 },
-    { header: 'Stok Mess', key: 'display_stock', width: 14 },
-    { header: 'Total Stok', key: 'total_stock', width: 12 },
+    { key: 'lokasi',          width: 12 },
+    { key: 'barcode',         width: 18 },
+    { key: 'name',            width: 38 },
+    { key: 'sku',             width: 14 },
+    { key: 'category',        width: 18 },
+    { key: 'unit',            width: 8  },
+    { key: 'price',           width: 14 },
+    { key: 'warehouse_stock', width: 13 },
+    { key: 'display_stock',   width: 13 },
+    { key: 'total_stock',     width: 12 },
+    { key: 'warehouse_min',   width: 11 },
+    { key: 'warehouse_max',   width: 11 },
+    { key: 'display_min',     width: 11 },
   ];
-  sheet.getRow(1).font = { bold: true };
-  products.forEach(p => sheet.addRow(p));
+
+  const headers = ['Lokasi','Barcode','Nama Produk','SKU','Kategori','Satuan','Harga','Stok MIOF','Stok MIPL','Total Stok','Min MIOF','Max MIOF','Min MIPL'];
+  const headerRow = sheet.getRow(3);
+  headers.forEach((h, i) => {
+    const cell = headerRow.getCell(i + 1);
+    cell.value = h;
+    cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A56DB' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = { top:{style:'thin',color:{argb:'FFFFFFFF'}}, left:{style:'thin',color:{argb:'FFFFFFFF'}}, bottom:{style:'thin',color:{argb:'FFFFFFFF'}}, right:{style:'thin',color:{argb:'FFFFFFFF'}} };
+  });
+  headerRow.height = 28;
+
+  // ---- Data rows ----
+  products.forEach((p, idx) => {
+    const row = sheet.addRow([
+      p.lokasi === 'mess' ? 'MIPL' : 'MIOF',
+      p.barcode || '-',
+      p.name,
+      p.sku || '-',
+      p.category,
+      p.unit || 'PCS',
+      p.price,
+      p.warehouse_stock,
+      p.display_stock,
+      p.total_stock,
+      p.warehouse_min,
+      p.warehouse_max,
+      p.display_min,
+    ]);
+    const isEven = idx % 2 === 0;
+    const bgColor = isEven ? 'FFF9FAFB' : 'FFFFFFFF';
+    row.eachCell((cell, colNum) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+      cell.border = { top:{style:'thin',color:{argb:'FFE5E7EB'}}, left:{style:'thin',color:{argb:'FFE5E7EB'}}, bottom:{style:'thin',color:{argb:'FFE5E7EB'}}, right:{style:'thin',color:{argb:'FFE5E7EB'}} };
+      cell.font = { size: 9.5 };
+      if (colNum === 1) {
+        cell.font = { size: 9.5, bold: true, color: { argb: p.lokasi === 'mess' ? 'FF0F9B52' : 'FF1A56DB' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+      if (colNum === 7) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'right' }; }
+      if ([8,9,10,11,12,13].includes(colNum)) { cell.alignment = { horizontal: 'center' }; }
+    });
+    row.height = 18;
+  });
+
+  // ---- Footer ----
+  const lastR = sheet.lastRow.number + 2;
+  sheet.mergeCells(`A${lastR}:D${lastR}`);
+  sheet.getCell(`A${lastR}`).value = `Total : ${products.length} produk`;
+  sheet.getCell(`A${lastR}`).font = { bold: true, size: 10, color: { argb: 'FF1A56DB' } };
+  sheet.getCell(`M${lastR + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
+  sheet.getCell(`M${lastR + 5}`).value = 'Administrator';
+  sheet.getCell(`M${lastR + 9}`).value = '(____________________)';
+
+  sheet.views = [{ state: 'frozen', ySplit: 3 }];
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', 'attachment; filename="data-produk.xlsx"');
+  res.setHeader('Content-Disposition', 'attachment; filename="Data-Produk-KOPPA.xlsx"');
   await workbook.xlsx.write(res);
   res.end();
 });
@@ -980,11 +1061,12 @@ app.get('/api/products/by-barcode/:barcode', authMiddleware, (req, res) => {
   res.json(product);
 
 });
-// ===== EXPORT TO EXCEL: RIWAYAT STOK =====
+// ===== EXPORT TO EXCEL: RIWAYAT STOK OFFICE + DISTRIBUSI =====
 app.get('/api/export/logs', authMiddleware, async (req, res) => {
   const { from, to, type } = req.query;
 
-  let sql = `
+  // --- Query stok office ---
+  let sqlLogs = `
     SELECT l.created_at, p.name as product_name, c.name as category_name, l.type, l.qty, l.note, l.user
     FROM stock_logs l
     JOIN products p ON p.id=l.product_id
@@ -992,83 +1074,145 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
     WHERE 1=1
   `;
   const params = [];
-  if (from) { sql += ` AND date(l.created_at) >= date(?)`; params.push(from); }
-  if (to) { sql += ` AND date(l.created_at) <= date(?)`; params.push(to); }
-  if (type && type !== 'all') { sql += ` AND l.type=?`; params.push(type); }
-  sql += ` ORDER BY l.id DESC`;
+  if (from) { sqlLogs += ` AND date(l.created_at) >= date(?)`; params.push(from); }
+  if (to)   { sqlLogs += ` AND date(l.created_at) <= date(?)`; params.push(to); }
+  if (type && type !== 'all') { sqlLogs += ` AND l.type=?`; params.push(type); }
+  sqlLogs += ` ORDER BY l.id DESC`;
+  const logs = db.prepare(sqlLogs).all(...params);
 
-  const logs = db.prepare(sql).all(...params);
+  // --- Query distribusi ---
+  let sqlTr = `
+    SELECT t.created_at, p.name as product_name, c.name as category_name,
+           t.direction, t.qty, t.note, t.user
+    FROM stock_transfers t
+    JOIN products p ON p.id=t.product_id
+    JOIN categories c ON c.id=p.category_id
+    WHERE 1=1
+  `;
+  const params2 = [];
+  if (from) { sqlTr += ` AND date(t.created_at) >= date(?)`; params2.push(from); }
+  if (to)   { sqlTr += ` AND date(t.created_at) <= date(?)`; params2.push(to); }
+  sqlTr += ` ORDER BY t.id DESC`;
+  const transfers = db.prepare(sqlTr).all(...params2);
 
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Laporan Stok');
+  workbook.creator = 'KOPPA STOK';
 
-  // ================= HEADER =================
-  sheet.mergeCells('A1:F1');
-  sheet.getCell('A1').value = 'LAPORAN STOK KOPPA MART';
-  sheet.getCell('A1').font = { size: 20, bold: true, color: { argb: 'FFFFFF' } };
-  sheet.getCell('A1').alignment = { horizontal: 'center' };
-  sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } };
-
-  sheet.getCell('A3').value = 'Periode';
-  sheet.getCell('B3').value = `${from || '-'} s/d ${to || '-'}`;
-  sheet.getCell('A4').value = 'Tanggal Cetak';
-  sheet.getCell('B4').value = new Date().toLocaleString('id-ID');
-
-  // ================= TABEL =================
-  sheet.columns = [
-    { header: 'Tanggal', key: 'created_at', width: 22 },
-    { header: 'Produk', key: 'product_name', width: 30 },
-    { header: 'Kategori', key: 'category_name', width: 20 },
-    { header: 'Tipe', key: 'type', width: 18 },
-    { header: 'Jumlah', key: 'qty', width: 12 },
-    { header: 'Catatan', key: 'note', width: 30 },
-  ];
-
-  const headerRow = sheet.getRow(5);
-  headerRow.height = 25;
-  headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
-  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4472C4' } };
-  headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
-
-  // ================= DATA =================
-  logs.forEach(item => {
-    sheet.addRow({
-      created_at: item.created_at,
-      product_name: item.product_name,
-      category_name: item.category_name,
-      type: item.type === 'in' ? 'STOK MASUK' : 'STOK KELUAR',
-      qty: item.qty,
-      note: item.note || '-'
+  // ===================== helper style =====================
+  function styleHeaderRow(row, cols, bgArgb) {
+    cols.forEach((label, i) => {
+      const cell = row.getCell(i + 1);
+      cell.value = label;
+      cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = { top:{style:'thin',color:{argb:'FFFFFFFF'}}, left:{style:'thin',color:{argb:'FFFFFFFF'}}, bottom:{style:'thin',color:{argb:'FFFFFFFF'}}, right:{style:'thin',color:{argb:'FFFFFFFF'}} };
     });
-  });
-
-  // ================= STYLE =================
-  sheet.eachRow((row, rowNumber) => {
+    row.height = 26;
+  }
+  function styleDataRow(row, idx) {
+    const bg = idx % 2 === 0 ? 'FFF9FAFB' : 'FFFFFFFF';
     row.eachCell(cell => {
-      cell.border = {
-        top: { style: 'thin' }, left: { style: 'thin' },
-        bottom: { style: 'thin' }, right: { style: 'thin' }
-      };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+      cell.border = { top:{style:'thin',color:{argb:'FFE5E7EB'}}, left:{style:'thin',color:{argb:'FFE5E7EB'}}, bottom:{style:'thin',color:{argb:'FFE5E7EB'}}, right:{style:'thin',color:{argb:'FFE5E7EB'}} };
+      cell.font = { size: 9.5 };
     });
-    if (rowNumber > 5) {
-      const typeCell = row.getCell(4);
-      if (typeCell.value === 'STOK MASUK') typeCell.font = { bold: true, color: { argb: '008000' } };
-      if (typeCell.value === 'STOK KELUAR') typeCell.font = { bold: true, color: { argb: 'FF0000' } };
-    }
+    row.height = 17;
+  }
+  function addTitleBlock(sheet, title, sub, mergeEnd) {
+    sheet.mergeCells(`A1:${mergeEnd}1`);
+    const t = sheet.getCell('A1');
+    t.value = title;
+    t.font = { size: 15, bold: true, color: { argb: 'FFFFFFFF' } };
+    t.alignment = { horizontal: 'center', vertical: 'middle' };
+    t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0C2D6B' } };
+    sheet.getRow(1).height = 34;
+
+    sheet.mergeCells(`A2:${mergeEnd}2`);
+    const s = sheet.getCell('A2');
+    s.value = sub;
+    s.font = { size: 9.5, italic: true, color: { argb: 'FF1A56DB' } };
+    s.alignment = { horizontal: 'center', vertical: 'middle' };
+    s.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F0FE' } };
+    sheet.getRow(2).height = 18;
+  }
+
+  const periodeStr = `${from || 'Semua'} s/d ${to || 'Semua'}`;
+  const nowStr = new Date().toLocaleString('id-ID');
+
+  // ===================== SHEET 1: Riwayat Stok Office (MIOF) =====================
+  const sh1 = workbook.addWorksheet('Riwayat Stok MIOF');
+  addTitleBlock(sh1, 'RIWAYAT STOK MASUK / KELUAR — MIOF (Office)', `Periode : ${periodeStr}   |   Cetak : ${nowStr}   |   Total : ${logs.length} transaksi`, 'G');
+
+  sh1.columns = [
+    { key: 'waktu',    width: 22 },
+    { key: 'produk',   width: 40 },
+    { key: 'kategori', width: 18 },
+    { key: 'tipe',     width: 16 },
+    { key: 'jumlah',   width: 10 },
+    { key: 'catatan',  width: 30 },
+    { key: 'petugas',  width: 14 },
+  ];
+  styleHeaderRow(sh1.getRow(3), ['Waktu','Produk','Kategori','Tipe','Jumlah','Catatan','Petugas'], 'FF1A56DB');
+
+  logs.forEach((item, idx) => {
+    const row = sh1.addRow([
+      item.created_at, item.product_name, item.category_name,
+      item.type === 'in' ? 'STOK MASUK' : 'STOK KELUAR',
+      item.qty, item.note || '-', item.user || '-'
+    ]);
+    styleDataRow(row, idx);
+    const tipeCell = row.getCell(4);
+    tipeCell.font = { bold: true, size: 9.5, color: { argb: item.type === 'in' ? 'FF0F9B52' : 'FFE02424' } };
+    row.getCell(5).alignment = { horizontal: 'center' };
   });
 
-  sheet.views = [{ state: 'frozen', ySplit: 5 }];
+  sh1.views = [{ state: 'frozen', ySplit: 3 }];
+  const lr1 = sh1.lastRow.number + 2;
+  sh1.mergeCells(`A${lr1}:D${lr1}`);
+  sh1.getCell(`A${lr1}`).value = `Total Transaksi : ${logs.length}`;
+  sh1.getCell(`A${lr1}`).font = { bold: true, color: { argb: 'FF1A56DB' } };
+  sh1.getCell(`G${lr1 + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
+  sh1.getCell(`G${lr1 + 5}`).value = 'Administrator';
+  sh1.getCell(`G${lr1 + 9}`).value = '(____________________)';
 
-  // ================= FOOTER =================
-  const lastRow = sheet.lastRow.number + 2;
-  sheet.getCell(`A${lastRow}`).value = `Total Transaksi : ${logs.length}`;
-  sheet.getCell(`A${lastRow}`).font = { bold: true };
-  sheet.getCell(`F${lastRow + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
-  sheet.getCell(`F${lastRow + 5}`).value = 'Administrator';
-  sheet.getCell(`F${lastRow + 9}`).value = '(____________________)';
+  // ===================== SHEET 2: Distribusi Office → Mess =====================
+  const sh2 = workbook.addWorksheet('Distribusi MIOF→MIPL');
+  addTitleBlock(sh2, 'RIWAYAT DISTRIBUSI OFFICE (MIOF) → MESS (MIPL)', `Periode : ${periodeStr}   |   Cetak : ${nowStr}   |   Total : ${transfers.length} transaksi`, 'G');
+
+  sh2.columns = [
+    { key: 'waktu',    width: 22 },
+    { key: 'produk',   width: 40 },
+    { key: 'kategori', width: 18 },
+    { key: 'arah',     width: 18 },
+    { key: 'jumlah',   width: 10 },
+    { key: 'catatan',  width: 30 },
+    { key: 'petugas',  width: 14 },
+  ];
+  styleHeaderRow(sh2.getRow(3), ['Waktu','Produk','Kategori','Arah Transfer','Jumlah','Catatan','Petugas'], 'FF0C7A40');
+
+  transfers.forEach((item, idx) => {
+    const arahLabel = item.direction === 'office_to_mess' ? 'OFFICE → MESS' : 'MESS → OFFICE';
+    const row = sh2.addRow([
+      item.created_at, item.product_name, item.category_name,
+      arahLabel, item.qty, item.note || '-', item.user || '-'
+    ]);
+    styleDataRow(row, idx);
+    row.getCell(4).font = { bold: true, size: 9.5, color: { argb: 'FF1A56DB' } };
+    row.getCell(5).alignment = { horizontal: 'center' };
+  });
+
+  sh2.views = [{ state: 'frozen', ySplit: 3 }];
+  const lr2 = sh2.lastRow.number + 2;
+  sh2.mergeCells(`A${lr2}:D${lr2}`);
+  sh2.getCell(`A${lr2}`).value = `Total Transfer : ${transfers.length}`;
+  sh2.getCell(`A${lr2}`).font = { bold: true, color: { argb: 'FF0C7A40' } };
+  sh2.getCell(`G${lr2 + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
+  sh2.getCell(`G${lr2 + 5}`).value = 'Administrator';
+  sh2.getCell(`G${lr2 + 9}`).value = '(____________________)';
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', 'attachment; filename=laporan-stok.xlsx');
+  res.setHeader('Content-Disposition', 'attachment; filename="Riwayat-Stok-KOPPA.xlsx"');
   await workbook.xlsx.write(res);
   res.end();
 });
@@ -1086,60 +1230,246 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
   `;
   const params = [];
   if (from) { sql += ` AND date(l.created_at) >= date(?)`; params.push(from); }
-  if (to) { sql += ` AND date(l.created_at) <= date(?)`; params.push(to); }
+  if (to)   { sql += ` AND date(l.created_at) <= date(?)`; params.push(to); }
   if (type && type !== 'all') { sql += ` AND l.type=?`; params.push(type); }
   sql += ` ORDER BY l.id DESC`;
-
   const logs = db.prepare(sql).all(...params);
 
-  const doc = new PDFDocument({ margin: 30, size: 'A4' });
+  // Current stock
+  const stocks = db.prepare(`
+    SELECT p.name, c.name as cat, p.warehouse_stock, p.display_stock,
+           (p.warehouse_stock+p.display_stock) as total,
+           p.warehouse_min, p.price
+    FROM products p JOIN categories c ON c.id=p.category_id ORDER BY p.name
+  `).all();
 
+  const PAGE_W = 595.28;
+  const PAGE_H = 841.89;
+  const ML = 36, MR = 36, MT = 36;
+  const CW = PAGE_W - ML - MR;   // content width
+
+  const doc = new PDFDocument({ margin: 0, size: 'A4', autoFirstPage: true });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'attachment; filename=laporan-stok.pdf');
-
+  res.setHeader('Content-Disposition', 'attachment; filename="Laporan-KOPPA-STOK.pdf"');
   doc.pipe(res);
 
-  doc.rect(0, 0, 700, 80).fill('#1F4E78');
-  doc.fillColor('white').fontSize(22).text('LAPORAN TRANSAKSI STOK', 0, 30, { align: 'center' });
-  doc.fillColor('black');
-  doc.moveDown(4);
+  // ── HELPERS ──────────────────────────────────────────────
+  const DARK_BLUE = '#0C2D6B';
+  const MID_BLUE  = '#1A56DB';
+  const LIGHT_BG  = '#EBF2FF';
+  const GREEN     = '#0F9B52';
+  const RED       = '#E02424';
+  const GRAY_TEXT = '#6B7280';
+  const BORDER    = '#E5E7EB';
+  const ROW_ALT   = '#F9FAFB';
 
-  doc.fontSize(11);
-  doc.text(`Tanggal Cetak : ${new Date().toLocaleString('id-ID')}`);
-  doc.text(`Periode : ${from || '-'} s/d ${to || '-'}`);
-  doc.moveDown();
+  function truncate(str, maxLen) {
+    if (!str) return '-';
+    str = String(str);
+    return str.length > maxLen ? str.slice(0, maxLen - 1) + '…' : str;
+  }
 
-  let y = doc.y;
-  doc.rect(30, y, 530, 20).fill('#4472C4');
-  doc.fillColor('white').fontSize(10)
-    .text('Tanggal', 35, y + 5)
-    .text('Produk', 130, y + 5)
-    .text('Tipe', 280, y + 5)
-    .text('Qty', 350, y + 5)
-    .text('User', 420, y + 5);
+  function drawRect(x, y, w, h, color) {
+    doc.rect(x, y, w, h).fill(color);
+  }
 
-  y += 25;
+  let curY = 0;
 
-  logs.forEach((item, index) => {
-    if (index % 2 === 0) doc.rect(30, y - 2, 530, 18).fill('#F5F5F5');
-    doc.fillColor('black');
-    doc.fontSize(9).text(item.created_at, 35, y);
-    doc.text(item.product_name, 130, y);
-    doc.fillColor(item.type === 'in' ? 'green' : 'red');
-    doc.text(item.type === 'in' ? 'MASUK' : 'KELUAR', 280, y);
-    doc.fillColor('black');
-    doc.text(item.qty.toString(), 350, y);
-    doc.text(item.user || '-', 420, y);
-    y += 20;
-    if (y > 730) { doc.addPage(); y = 50; }
+  function checkPageBreak(needed = 20) {
+    if (curY + needed > PAGE_H - 60) {
+      doc.addPage();
+      curY = MT;
+    }
+  }
+
+  // ── PAGE HEADER ───────────────────────────────────────────
+  function drawPageHeader() {
+    // Dark banner
+    drawRect(0, 0, PAGE_W, 70, DARK_BLUE);
+    // Accent strip
+    drawRect(0, 70, PAGE_W, 4, MID_BLUE);
+
+    // Logo boxes (mini)
+    doc.save();
+    doc.roundedRect(ML, 14, 18, 18, 3).fill('#FFFFFF').fillOpacity(0.9);
+    doc.roundedRect(ML + 20, 14, 12, 18, 3).fill('#FFFFFF').fillOpacity(0.4);
+    doc.roundedRect(ML, 34, 12, 18, 3).fill('#FFFFFF').fillOpacity(0.4);
+    doc.roundedRect(ML + 20, 34, 18, 18, 3).fill('#FFFFFF').fillOpacity(0.9);
+    doc.restore();
+
+    doc.fillColor('#FFFFFF').fontSize(18).font('Helvetica-Bold')
+       .text('KOPPA STOK', ML + 38, 16);
+    doc.fillColor('#93C5FD').fontSize(9).font('Helvetica')
+       .text('Sistem Manajemen Inventori', ML + 39, 36);
+
+    doc.fillColor('#FFFFFF').fontSize(14).font('Helvetica-Bold')
+       .text('LAPORAN TRANSAKSI STOK', 0, 22, { align: 'center', width: PAGE_W });
+
+    curY = 84;
+
+    // Info band
+    drawRect(ML, curY, CW, 32, LIGHT_BG);
+    doc.rect(ML, curY, CW, 32).stroke(BORDER);
+    const periodeStr = `${from || 'Semua'}  s/d  ${to || 'Semua'}`;
+    doc.fillColor(MID_BLUE).fontSize(8.5).font('Helvetica-Bold')
+       .text('PERIODE :', ML + 10, curY + 6);
+    doc.fillColor('#111827').font('Helvetica')
+       .text(periodeStr, ML + 60, curY + 6);
+    doc.fillColor(MID_BLUE).font('Helvetica-Bold')
+       .text('CETAK :', ML + 10, curY + 18);
+    doc.fillColor('#111827').font('Helvetica')
+       .text(new Date().toLocaleString('id-ID'), ML + 60, curY + 18);
+    // Right stats
+    doc.fillColor(MID_BLUE).font('Helvetica-Bold').fontSize(8.5)
+       .text(`Total Transaksi : ${logs.length}`, PAGE_W - MR - 140, curY + 6, { width: 136, align: 'right' });
+    doc.fillColor(GRAY_TEXT).font('Helvetica').fontSize(8)
+       .text('Riwayat Stok Office (MIOF)', PAGE_W - MR - 140, curY + 18, { width: 136, align: 'right' });
+
+    curY += 42;
+  }
+
+  drawPageHeader();
+
+  // ── SECTION TITLE ─────────────────────────────────────────
+  function sectionTitle(label, color = MID_BLUE) {
+    checkPageBreak(30);
+    drawRect(ML, curY, CW, 22, color);
+    doc.fillColor('#FFFFFF').fontSize(9.5).font('Helvetica-Bold')
+       .text(label, ML + 10, curY + 6, { width: CW - 10 });
+    curY += 22;
+  }
+
+  // ── TABLE HEADER ──────────────────────────────────────────
+  // cols: [{label, x, w, align?}]
+  function tableHeader(cols) {
+    checkPageBreak(22);
+    drawRect(ML, curY, CW, 20, '#E8F0FE');
+    doc.rect(ML, curY, CW, 20).stroke(BORDER);
+    cols.forEach(c => {
+      doc.fillColor(DARK_BLUE).fontSize(8).font('Helvetica-Bold')
+         .text(c.label, ML + c.x, curY + 6, { width: c.w, align: c.align || 'left' });
+    });
+    curY += 20;
+  }
+
+  // ── TABLE ROW ─────────────────────────────────────────────
+  function tableRow(cols, values, rowIdx, rowH = 16) {
+    checkPageBreak(rowH + 2);
+    const bg = rowIdx % 2 === 0 ? '#FFFFFF' : ROW_ALT;
+    drawRect(ML, curY, CW, rowH, bg);
+    doc.rect(ML, curY, CW, rowH).stroke(BORDER);
+    cols.forEach((c, i) => {
+      const val = values[i];
+      if (val && val._color) {
+        doc.fillColor(val._color).fontSize(7.5).font('Helvetica-Bold')
+           .text(val.text, ML + c.x, curY + 4, { width: c.w, align: c.align || 'left' });
+      } else {
+        doc.fillColor('#111827').fontSize(7.5).font('Helvetica')
+           .text(String(val ?? '-'), ML + c.x, curY + 4, { width: c.w, align: c.align || 'left' });
+      }
+    });
+    curY += rowH;
+  }
+
+  // ── SECTION 1: Riwayat Stok Office ────────────────────────
+  sectionTitle('📦  RIWAYAT STOK MASUK / KELUAR  —  MIOF (Office/Gudang)');
+
+  const logsColDef = [
+    { label: 'WAKTU',    x:  0,   w: 108, align: 'left' },
+    { label: 'PRODUK',   x: 110,  w: 175, align: 'left' },
+    { label: 'KATEGORI', x: 287,  w: 72,  align: 'left' },
+    { label: 'TIPE',     x: 361,  w: 58,  align: 'center' },
+    { label: 'QTY',      x: 421,  w: 28,  align: 'center' },
+    { label: 'CATATAN',  x: 451,  w: 60,  align: 'left' },
+    { label: 'PETUGAS',  x: 513,  w: 46,  align: 'left' },
+  ];
+
+  tableHeader(logsColDef);
+
+  if (logs.length === 0) {
+    checkPageBreak(20);
+    doc.fillColor(GRAY_TEXT).fontSize(9).font('Helvetica')
+       .text('— Tidak ada data transaksi —', ML, curY + 4, { width: CW, align: 'center' });
+    curY += 20;
+  } else {
+    logs.forEach((item, idx) => {
+      const tipeVal = item.type === 'in'
+        ? { text: 'MASUK',  _color: GREEN }
+        : { text: 'KELUAR', _color: RED };
+      tableRow(logsColDef, [
+        truncate(item.created_at, 20),
+        truncate(item.product_name, 34),
+        truncate(item.category_name, 14),
+        tipeVal,
+        item.qty,
+        truncate(item.note, 12),
+        truncate(item.user, 10),
+      ], idx, 16);
+    });
+  }
+
+  // ── TOTAL ROW ─────────────────────────────────────────────
+  checkPageBreak(20);
+  drawRect(ML, curY, CW, 18, LIGHT_BG);
+  doc.rect(ML, curY, CW, 18).stroke(BORDER);
+  doc.fillColor(MID_BLUE).fontSize(8.5).font('Helvetica-Bold')
+     .text(`Total Transaksi : ${logs.length}`, ML + 8, curY + 5);
+  curY += 24;
+
+  // ── SECTION 2: Stok Saat Ini ──────────────────────────────
+  checkPageBreak(40);
+  sectionTitle('📊  KONDISI STOK SAAT INI', DARK_BLUE);
+
+  const stColDef = [
+    { label: 'PRODUK',    x:   0, w: 175, align: 'left' },
+    { label: 'KATEGORI',  x: 177, w: 72,  align: 'left' },
+    { label: 'MIOF',      x: 251, w: 36,  align: 'center' },
+    { label: 'MIPL',      x: 289, w: 36,  align: 'center' },
+    { label: 'TOTAL',     x: 327, w: 36,  align: 'center' },
+    { label: 'MIN',       x: 365, w: 30,  align: 'center' },
+    { label: 'HARGA',     x: 397, w: 58,  align: 'right' },
+    { label: 'STATUS',    x: 457, w: 62,  align: 'center' },
+  ];
+
+  tableHeader(stColDef);
+
+  stocks.forEach((p, idx) => {
+    const isLow = (p.warehouse_stock + p.display_stock) <= p.warehouse_min;
+    const statusVal = isLow
+      ? { text: 'PERLU ORDER', _color: RED }
+      : { text: 'OK', _color: GREEN };
+    const hargaStr = 'Rp' + p.price.toLocaleString('id-ID');
+    tableRow(stColDef, [
+      truncate(p.name, 34),
+      truncate(p.cat, 14),
+      p.warehouse_stock,
+      p.display_stock,
+      p.total,
+      p.warehouse_min,
+      hargaStr,
+      statusVal,
+    ], idx, 15);
   });
 
-  doc.moveDown(2);
-  doc.fontSize(10).fillColor('gray').text(`Total Transaksi : ${logs.length}`, 30, y + 20);
-  doc.fillColor('black');
-  doc.text(`Palembang, ${new Date().toLocaleDateString('id-ID')}`, 380, y + 70);
-  doc.text('Administrator', 420, y + 90);
-  doc.text('(____________________)', 390, y + 150);
+  // ── FOOTER ────────────────────────────────────────────────
+  checkPageBreak(100);
+  curY += 16;
+  drawRect(ML, curY, CW, 1, BORDER);
+  curY += 12;
+
+  doc.fillColor(GRAY_TEXT).fontSize(8).font('Helvetica')
+     .text(`Total : ${logs.length} transaksi stok  |  ${stocks.length} produk`, ML, curY);
+
+  const signX = PAGE_W - MR - 160;
+  doc.fillColor('#111827').fontSize(9).font('Helvetica')
+     .text(`Palembang, ${new Date().toLocaleDateString('id-ID')}`, signX, curY, { width: 160, align: 'center' });
+  curY += 16;
+  doc.font('Helvetica-Bold').text('Administrator', signX, curY, { width: 160, align: 'center' });
+  curY += 52;
+  doc.font('Helvetica').text('(____________________)', signX, curY, { width: 160, align: 'center' });
+
+  // ── PAGE NUMBERS ──────────────────────────────────────────
+  const pages = doc.bufferedPageRange ? doc.bufferedPageRange() : null;
 
   doc.end();
 });
