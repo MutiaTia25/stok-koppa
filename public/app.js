@@ -102,13 +102,35 @@ function buildSidebar(){
   ];
   const sidebar = document.getElementById('sidebarMenu');
   sidebar.innerHTML = '';
-  menu.forEach(m => {
-    if (!m.roles.includes(currentUser.role)) return;
-    const btn = document.createElement('button');
-    btn.innerHTML = `<span class="icon">${m.icon}</span> ${m.label}`;
-    btn.id = 'menu-' + m.id;
-    btn.onclick = () => showPage(m.id);
-    sidebar.appendChild(btn);
+
+  // Group menu by section for visual clarity
+  const sections = [
+    { label: 'Utama', ids: ['dashboard'] },
+    { label: 'Inventori', ids: ['products', 'stock', 'opname'] },
+    { label: 'Laporan & Pengaturan', ids: ['reports', 'categories', 'users'] },
+  ];
+
+  sections.forEach(sec => {
+    const sectionItems = menu.filter(m => sec.ids.includes(m.id) && m.roles.includes(currentUser.role));
+    if (!sectionItems.length) return;
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'sidebar-label';
+    labelEl.textContent = sec.label;
+    sidebar.appendChild(labelEl);
+
+    const sectionWrap = document.createElement('div');
+    sectionWrap.className = 'sidebar-section';
+
+    sectionItems.forEach(m => {
+      const btn = document.createElement('button');
+      btn.innerHTML = `<span class="sb-icon-wrap">${m.icon}</span> ${m.label}`;
+      btn.id = 'menu-' + m.id;
+      btn.onclick = () => showPage(m.id);
+      sectionWrap.appendChild(btn);
+    });
+
+    sidebar.appendChild(sectionWrap);
   });
 }
 
@@ -139,10 +161,10 @@ async function loadDashboard(){
   if (!isAdmin) {
     const sum = await api('/summary');
     document.getElementById('dashCards').innerHTML = `
-      <div class="card" style="grid-column:1/-1; background:linear-gradient(135deg,#1e3a8a,#3b82f6); color:#fff; border:none;">
+      <div class="card" style="grid-column:1/-1; background:linear-gradient(135deg,#0c2d6b 0%,#1a56db 60%,#3b7ef8 100%); color:#fff; border:none; box-shadow:0 6px 20px rgba(26,86,219,.3);">
         <div style="font-size:28px; margin-bottom:6px;">👋</div>
-        <div style="font-size:18px; font-weight:700;">Selamat datang, ${currentUser.full_name || currentUser.username}!</div>
-        <div style="font-size:13px; opacity:.85; margin-top:3px;">Kasir KOPPA MART</div>
+        <div style="font-size:18px; font-weight:800; letter-spacing:-.2px;">Selamat datang, ${currentUser.full_name || currentUser.username}!</div>
+        <div style="font-size:13px; opacity:.8; margin-top:3px; font-weight:500;">Kasir · KOPPA STOK</div>
       </div>
       <div class="card">
         <div class="icon-box icon-blue">📦</div>
@@ -340,7 +362,7 @@ async function loadProducts(){
   const products = await api(url);
   const tbody = document.getElementById('productsTable');
   tbody.innerHTML = products.map(p => {
-    const locationLabel = p.location === 'mess' ? 'MIPS/Stock/Storage' : 'MIOF/Stock/Storage';
+    const locationLabel = p.location === 'mess' ? 'MIPL / Mess' : 'MIOF / Gudang';
     const productLabel  = p.sku ? `[${p.sku}] ${p.name}` : p.name;
     const totalQty      = p.warehouse_stock + p.display_stock;
 
@@ -470,6 +492,15 @@ function openProductModal(product=null){
     dStockInput.disabled = false;
     dLabel.textContent = 'Stok Mess Awal';
   }
+  // Set lokasi default sesuai data produk
+  // Normalize: DB bisa kirim 'office'/'warehouse'→office atau 'mess'/'display'→mess
+  let locVal = 'office';
+  if (product && product.location) {
+    const l = product.location.toLowerCase();
+    locVal = (l === 'mess' || l === 'display' || l.includes('mipl') || l.includes('mips')) ? 'mess' : 'office';
+  }
+  document.getElementById('location').value = locVal;
+
   document.getElementById('productModalOverlay').classList.add('active');
 }
 
@@ -1426,7 +1457,7 @@ function renderOpnameForm(product){
         Barcode: ${product.barcode || '-'} &nbsp;|&nbsp; SKU: ${product.sku || '-'} &nbsp;|&nbsp; Kategori: ${product.category_name || '-'}
       </div>
 
-      <!-- Info stok sistem -->
+      <!-- Info stok sistem — hanya admin yang melihat stok sistem -->
       ${isAdmin ? `
       <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
         <div style="flex:1; min-width:120px; background:#dbeafe; border-radius:8px; padding:10px 14px; text-align:center;">
@@ -1437,17 +1468,14 @@ function renderOpnameForm(product){
           <div style="font-size:11px; color:#16a34a; font-weight:600;">STOK MESS (Sistem)</div>
           <div style="font-size:22px; font-weight:800; color:#15803d;">${messStok}</div>
         </div>
-      </div>` : `
-      <div style="font-size:13px; color:#64748b; margin-bottom:12px;">
-        Stok sistem: Office <b>${officeStok}</b> &nbsp;|&nbsp; Mess <b>${messStok}</b>
-      </div>`}
+      </div>` : ``}
 
       <!-- Pilih lokasi -->
       <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
         <label style="font-size:13px; font-weight:600; color:#475569; white-space:nowrap;">Lokasi Hitung:</label>
         <select id="opnameLocation" onchange="onLokasiChange()" style="padding:8px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; flex:1; min-width:160px;">
-          <option value="warehouse">Office / Gudang</option>
-          <option value="display">Mess / Rak</option>
+          <option value="warehouse">MIOF / Gudang</option>
+          <option value="display">MIPL / Mess</option>
         </select>
       </div>
 
@@ -1579,7 +1607,7 @@ async function loadOpnameHistory(){
       <td>${o.created_at}</td>
       <td>${o.user || '-'}</td>
       <td>${o.product_name}</td>
-      <td>${o.location === 'warehouse' ? 'Office' : 'Mess'}</td>
+      <td>${o.location === 'warehouse' ? 'MIOF' : 'MIPL'}</td>
       <td><b>${o.stock_fisik}</b></td>
       <td>${o.stock_system}</td>
       <td class="${o.selisih === 0 ? '' : (o.selisih > 0 ? 'type-in' : 'type-out')}">${o.selisih > 0 ? '+' : ''}${o.selisih}</td>
@@ -1606,7 +1634,7 @@ async function loadOpnameKasirHistory(){
     <tr>
       <td>${o.created_at}</td>
       <td>${o.product_name}</td>
-      <td>${o.location === 'warehouse' ? 'Office' : 'Mess'}</td>
+      <td>${o.location === 'warehouse' ? 'MIOF' : 'MIPL'}</td>
       <td><b>${o.stock_fisik}</b></td>
       <td>${statusBadge}</td>
     </tr>`;
