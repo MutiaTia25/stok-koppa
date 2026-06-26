@@ -1212,7 +1212,7 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
   sh2.getCell(`G${lr2 + 9}`).value = '(____________________)';
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', 'attachment; filename="Riwayat-Stok-KOPPA.xlsx"');
+  res.setHeader('Content-Disposition', 'attachment; filename="Riwayat-Stok-Masuk-Keluar.xlsx"');
   await workbook.xlsx.write(res);
   res.end();
 });
