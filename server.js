@@ -1267,7 +1267,8 @@ app.post(
         const m = productText.match(/^\[([^\]]+)\]\s*(.+)$/);
         if (m) { sku = m[1].trim(); name = m[2].trim(); }
 
-        const isMess = locationRaw.toUpperCase().includes('MIPS');
+        const locUp = locationRaw.toUpperCase();
+        const isMess = locUp.includes('MIPS') || locUp.includes('MIPL') || locUp.includes('MESS') || locUp.includes('DISPLAY');
         const locKey = isMess ? 'mess' : 'office';
 
         // Key unik = barcode + lokasi → beda lokasi = produk terpisah
@@ -1316,12 +1317,14 @@ app.post(
                 SET name=?, sku=?, category_id=?, price=?, unit=?,
                     warehouse_stock=?, display_stock=?,
                     warehouse_min=?, warehouse_max=?,
-                    display_min=?, display_max=?
+                    display_min=?, display_max=?,
+                    default_location=?
                 WHERE id=?
               `).run(
                 p.name, p.sku, cat.id, p.price, p.unit,
                 p.warehouse_stock, p.display_stock,
                 p.minQty, p.maxQty, p.minQty, p.maxQty,
+                p.locKey,
                 existing.id
               );
             } else {
