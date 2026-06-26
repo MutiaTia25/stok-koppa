@@ -590,7 +590,8 @@ app.get('/api/logs', authMiddleware, (req, res) => {
   const { from, to, type, product_id } = req.query;
   let sql = `SELECT l.*, p.name as product_name, c.name as category_name FROM stock_logs l
     JOIN products p ON p.id=l.product_id
-    JOIN categories c ON c.id=p.category_id WHERE 1=1`;
+    JOIN categories c ON c.id=p.category_id
+    WHERE (l.note IS NULL OR l.note NOT LIKE '[OPNAME]%')`;
   const params = [];
   if (from) { sql += ` AND date(l.created_at) >= date(?)`; params.push(from); }
   if (to) { sql += ` AND date(l.created_at) <= date(?)`; params.push(to); }
@@ -1177,13 +1178,13 @@ app.get('/api/products/by-barcode/:barcode', authMiddleware, (req, res) => {
 app.get('/api/export/logs', authMiddleware, async (req, res) => {
   const { from, to, type } = req.query;
 
-  // --- Query stok office ---
+  // --- Query stok office (tanpa entri opname) ---
   let sqlLogs = `
     SELECT l.created_at, p.name as product_name, c.name as category_name, l.type, l.qty, l.note, l.user
     FROM stock_logs l
     JOIN products p ON p.id=l.product_id
     JOIN categories c ON c.id=p.category_id
-    WHERE 1=1
+    WHERE (l.note IS NULL OR l.note NOT LIKE '[OPNAME]%')
   `;
   const params = [];
   if (from) { sqlLogs += ` AND date(l.created_at) >= date(?)`; params.push(from); }
