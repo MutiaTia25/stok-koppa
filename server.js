@@ -648,7 +648,6 @@ app.get('/api/summary', authMiddleware, (req, res) => {
     p.display_stock <= p.display_min
 
   ORDER BY p.name
-  LIMIT 10
 `).all().map(enrichProduct);
 
   const todayIn = db.prepare(`SELECT COALESCE(SUM(qty),0) s FROM stock_logs WHERE type='in' AND date(created_at)=date('now','localtime')`).get().s;
