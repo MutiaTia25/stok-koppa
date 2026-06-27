@@ -176,27 +176,10 @@ async function loadDashboard(){
         <div class="num">${sum.totalStock}</div>
         <div class="label">Total Unit Stok</div>
       </div>
-      <div class="card">
-        <div class="icon-box icon-red">⚠️</div>
-        <div class="num" style="color:${sum.lowStockItems.length>0?'#dc2626':'#1e293b'}">${sum.lowStockItems.length}</div>
-        <div class="label">Produk Perlu Perhatian</div>
-      </div>
     `;
-    // Tampilkan panel produk perlu perhatian untuk kasir juga
+    // Sembunyikan panel produk perlu perhatian untuk kasir
     const adminPanel = document.getElementById('dashAdminPanel');
-    adminPanel.style.display = '';
-    document.getElementById('lowStockTable').innerHTML = sum.lowStockItems.map(p => {
-      let saran = [];
-      if (p.warehouse_reorder_qty > 0) saran.push(`Order gudang +${p.warehouse_reorder_qty}`);
-      if (p.display_refill_qty > 0) saran.push(`Isi display +${p.display_refill_qty}`);
-      return `
-      <tr>
-        <td>${p.name}</td>
-        <td class="${p.warehouse_stock <= p.warehouse_min ? 'stock-low' : ''}">${p.warehouse_stock}</td>
-        <td class="${p.display_stock <= p.display_min ? 'stock-low' : ''}">${p.display_stock}</td>
-        <td>${saran.length ? `<span style="color:#dc2626; font-weight:600; font-size:12px;">${saran.join('<br>')}</span>` : '-'}</td>
-      </tr>`;
-    }).join('') || '<tr><td colspan="4" class="empty">✅ Semua stok aman</td></tr>';
+    adminPanel.style.display = 'none';
     try {
       const ctx = document.getElementById('categoryChart');
       const labels = sum.byCategory.map(c => c.name);
@@ -353,6 +336,12 @@ async function loadProducts(){
   if (bulkBar && !isAdmin) bulkBar.style.display = 'none';
   if (thCheckbox) thCheckbox.style.display = isAdmin ? '' : 'none';
   if (thAksi) thAksi.textContent = isAdmin ? 'Aksi' : '';
+  // Kasir: sembunyikan kolom stok & lokasi
+  const kasirHideCols = ['thLokasi','thOffice','thMess','thSatuan','thMin','thMax'];
+  kasirHideCols.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isAdmin ? '' : 'none';
+  });
 
   const q = document.getElementById('searchProduct').value.trim();
   const cat = document.getElementById('filterCategory').value;
@@ -367,19 +356,13 @@ async function loadProducts(){
     const totalQty      = p.warehouse_stock + p.display_stock;
 
     if (!isAdmin) {
-      // Kasir: tampilkan persis seperti Excel, tanpa checkbox dan aksi
+      // Kasir: hanya tampil Barcode, Nama Produk, Kategori, Harga
       return `
       <tr>
-        <td>${locationLabel}</td>
         <td>${p.barcode || '-'}</td>
         <td>${productLabel}</td>
         <td>${p.category_name}</td>
-        <td>${p.warehouse_stock}</td>
-        <td>${p.display_stock}</td>
-        <td>${p.unit || 'PCS'}</td>
         <td>${formatRupiah(p.price)}</td>
-        <td>${p.warehouse_min}</td>
-        <td>${p.warehouse_max}</td>
       </tr>`;
     }
 
@@ -402,7 +385,7 @@ async function loadProducts(){
         <button class="btn btn-sm btn-red" onclick="deleteProduct(${p.id})">Hapus</button>
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="${isAdmin ? 12 : 10}" class="empty">Belum ada produk</td></tr>`;
+  }).join('') || `<tr><td colspan="${isAdmin ? 12 : 4}" class="empty">Belum ada produk</td></tr>`;
 
   // Reset select all
   const selectAll = document.getElementById('selectAllProducts');
@@ -775,22 +758,24 @@ function renderStockForm(product){
 
   const today = new Date().toISOString().split('T')[0];
   formEl.style.display = 'block';
+  const _isAdminStock = currentUser.role === 'admin';
   formEl.innerHTML = `
     <div style="margin-top:12px; padding:14px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
       <div style="font-weight:700; font-size:15px; color:#1e293b; margin-bottom:4px;">📦 ${product.name}</div>
       <div style="font-size:12px; color:#64748b; margin-bottom:12px;">
         Barcode: ${product.barcode || '-'} &nbsp;|&nbsp; SKU: ${product.sku || '-'} &nbsp;|&nbsp; Satuan: ${product.unit || 'PCS'}
       </div>
+      ${_isAdminStock ? `
       <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
         <div style="flex:1; min-width:120px; background:#dbeafe; border-radius:8px; padding:10px 14px; text-align:center;">
-          <div style="font-size:11px; color:#1d4ed8; font-weight:600;">STOK OFFICE</div>
+          <div style="font-size:11px; color:#1d4ed8; font-weight:600;">STOK OFFICE (Sistem)</div>
           <div style="font-size:22px; font-weight:800; color:#1e3a8a;">${product.warehouse_stock}</div>
         </div>
         <div style="flex:1; min-width:120px; background:#dcfce7; border-radius:8px; padding:10px 14px; text-align:center;">
-          <div style="font-size:11px; color:#16a34a; font-weight:600;">STOK MESS</div>
+          <div style="font-size:11px; color:#16a34a; font-weight:600;">STOK MESS (Sistem)</div>
           <div style="font-size:22px; font-weight:800; color:#15803d;">${product.display_stock}</div>
         </div>
-      </div>
+      </div>` : ``}
       <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
         <div>
           <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Tanggal</label>
@@ -809,7 +794,7 @@ function renderStockForm(product){
       </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button id="btnSubmitStock" class="btn btn-green" onclick="submitStock('in')" style="flex:1; min-width:140px;">⬆️ Barang Masuk</button>
-        <button class="btn btn-red" onclick="submitStock('out')" style="flex:1; min-width:140px;">⬇️ Barang Keluar</button>
+        ${_isAdminStock ? `<button class="btn btn-red" onclick="submitStock('out')" style="flex:1; min-width:140px;">⬇️ Barang Keluar</button>` : ``}
         <button class="btn btn-gray" onclick="resetStockForm()" style="min-width:80px;">✕ Ganti</button>
       </div>
     </div>
@@ -1030,6 +1015,7 @@ function renderTransferForm(product){
       <div style="font-size:12px; color:#64748b; margin-bottom:12px;">
         Barcode: ${product.barcode || '-'} &nbsp;|&nbsp; SKU: ${product.sku || '-'} &nbsp;|&nbsp; Satuan: ${product.unit || 'PCS'}
       </div>
+      ${currentUser.role === 'admin' ? `
       <div style="display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
         <div style="flex:1; min-width:120px; background:#dbeafe; border-radius:8px; padding:10px 14px; text-align:center;">
           <div style="font-size:11px; color:#1d4ed8; font-weight:600;">📦 STOK OFFICE</div>
@@ -1039,7 +1025,7 @@ function renderTransferForm(product){
           <div style="font-size:11px; color:#16a34a; font-weight:600;">🛒 STOK MESS</div>
           <div style="font-size:22px; font-weight:800; color:#15803d;">${product.display_stock}</div>
         </div>
-      </div>
+      </div>` : ''}
       <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
         <div style="flex:1; min-width:100px;">
           <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Jumlah Transfer</label>
@@ -1608,54 +1594,126 @@ async function loadOpnameHistory(){
   if (status) url += 'status=' + status;
   const data = await api(url);
   const tbody = document.getElementById('opnameTable');
+
+  // Update jumlah pending di bulk bar
+  const pendingCount = data.filter(o => o.status === 'pending').length;
+  const countLabel = document.getElementById('opnamePendingCount');
+  if (countLabel) countLabel.textContent = pendingCount > 0 ? `· ${pendingCount} pending` : '';
+  const btnApproveLabel = document.getElementById('btnBulkApprove');
+  if (btnApproveLabel) btnApproveLabel.textContent = `✓ Approve Semua Pending (${pendingCount})`;
+
   tbody.innerHTML = data.map(o => {
     const statusBadge = o.status === 'approved'
-      ? `<span class="pill pill-green">Approved</span>`
+      ? `<span class="pill pill-green">APPROVED</span>`
       : o.status === 'rejected'
-        ? `<span class="pill pill-red">Ditolak</span>`
-        : `<span class="pill" style="background:#fef3c7;color:#d97706;">Pending ⏳</span>`;
-    const aksiHtml = o.status === 'pending'
-      ? `<button class="btn btn-sm btn-green" onclick="approveOpname(${o.id})">✓ Approve</button>
-         <button class="btn btn-sm btn-gray" onclick="editOpnameQty(${o.id}, ${o.stock_fisik})">✏️ Edit</button>
-         <button class="btn btn-sm btn-red" onclick="rejectOpname(${o.id})">✗ Tolak</button>`
-      : '-';
+        ? `<span class="pill pill-red">DITOLAK</span>`
+        : `<span class="pill" style="background:#fef3c7;color:#d97706;">PENDING ⏳</span>`;
+
+    // Kolom Aksi dihapus — approve/tolak pakai bulk action bar
+
+    const chkInput = o.status === 'pending'
+      ? `<input type="checkbox" class="opname-chk" value="${o.id}" onchange="onOpnameChkChange()" style="width:16px;height:16px;cursor:pointer;accent-color:#1a56db;">`
+      : `<input type="checkbox" disabled style="width:16px;height:16px;opacity:.3;">`;
+
+    const selisihClass = o.selisih === 0 ? '' : (o.selisih > 0 ? 'type-in' : 'type-out');
+    const selisihLabel = o.selisih === 0 ? '0' : (o.selisih > 0 ? '+' + o.selisih : o.selisih);
+
     return `
     <tr>
-      <td>${o.created_at}</td>
+      <td style="width:44px;min-width:44px;padding:8px 4px;text-align:center;vertical-align:middle;">${chkInput}</td>
+      <td style="font-size:12px; white-space:nowrap;">${o.created_at}</td>
       <td>${o.user || '-'}</td>
-      <td>${o.product_name}</td>
+      <td style="font-weight:600;">${o.product_name}</td>
       <td>${o.location === 'warehouse' ? 'MIOF' : 'MIPL'}</td>
       <td><b>${o.stock_fisik}</b></td>
       <td>${o.stock_system}</td>
-      <td class="${o.selisih === 0 ? '' : (o.selisih > 0 ? 'type-in' : 'type-out')}">${o.selisih > 0 ? '+' : ''}${o.selisih}</td>
+      <td class="${selisihClass}" style="font-weight:700;">${selisihLabel}</td>
       <td>${statusBadge}</td>
-      <td>${aksiHtml}</td>
-    </tr>
-  `;
+    </tr>`;
   }).join('') || '<tr><td colspan="9" class="empty">Belum ada riwayat opname</td></tr>';
+
+  // Sync master checkbox
+  const masterChk = document.getElementById('selectAllOpname');
+  if (masterChk) masterChk.checked = false;
+}
+
+function onOpnameChkChange(){
+  const all = document.querySelectorAll('.opname-chk:not(:disabled)');
+  const checkedList = document.querySelectorAll('.opname-chk:checked');
+  const n = checkedList.length;
+
+  // Sync master checkbox (termasuk indeterminate state)
+  const master = document.getElementById('selectAllOpname');
+  if (master) {
+    master.checked = all.length > 0 && n === all.length;
+    master.indeterminate = n > 0 && n < all.length;
+  }
+
+  // Update label tombol bulk sesuai jumlah yang dicentang
+  const btnApprove = document.getElementById('btnBulkApprove');
+  const btnTolak   = document.getElementById('btnBulkTolak');
+  if (btnApprove) btnApprove.textContent = n > 0 ? `✓ Approve Terpilih (${n})` : `✓ Approve Semua Pending`;
+  if (btnTolak)   btnTolak.textContent   = n > 0 ? `✗ Tolak Terpilih (${n})`  : `✗ Tolak Yang Dicentang`;
 }
 
 async function loadOpnameKasirHistory(){
-  // Kasir hanya lihat miliknya sendiri (server bisa filter by user, tapi kita pakai endpoint yang sama)
   const data = await api('/opname?');
   const tbody = document.getElementById('opnameKasirTable');
-  // filter hanya milik kasir ini
   const mine = data.filter(o => o.user === currentUser.username);
-  tbody.innerHTML = mine.slice(0, 20).map(o => {
-    const statusBadge = o.status === 'approved'
-      ? `<span class="pill pill-green">✓ Disetujui</span>`
-      : o.status === 'rejected'
-        ? `<span class="pill pill-red">✗ Ditolak</span>`
-        : `<span class="pill" style="background:#fef3c7;color:#d97706;">⏳ Menunggu Admin</span>`;
-    return `
-    <tr>
-      <td>${o.created_at}</td>
-      <td>${o.product_name}</td>
-      <td>${o.location === 'warehouse' ? 'MIOF' : 'MIPL'}</td>
-      <td><b>${o.stock_fisik}</b></td>
-      <td>${statusBadge}</td>
+
+  // Kelompokkan per tanggal SO (YYYY-MM-DD)
+  const grouped = {};
+  mine.forEach(o => {
+    const tgl = o.created_at ? o.created_at.split(' ')[0] : 'Tanpa Tanggal';
+    if (!grouped[tgl]) grouped[tgl] = [];
+    grouped[tgl].push(o);
+  });
+
+  if (Object.keys(grouped).length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Belum ada data opname</td></tr>';
+    return;
+  }
+
+  let html = '';
+  Object.keys(grouped).sort().reverse().forEach(tgl => {
+    const items = grouped[tgl];
+    const total = items.length;
+    const approved = items.filter(o => o.status === 'approved').length;
+    const rejected = items.filter(o => o.status === 'rejected').length;
+    const pending  = items.filter(o => o.status === 'pending').length;
+
+    // Baris header tanggal SO
+    let notifBadge = '';
+    if (pending > 0)
+      notifBadge = `<span class="pill" style="background:#fef3c7;color:#d97706; margin-left:6px;">⏳ ${pending} Menunggu</span>`;
+    if (approved > 0)
+      notifBadge += `<span class="pill pill-green" style="margin-left:4px;">✓ ${approved} Disetujui</span>`;
+    if (rejected > 0)
+      notifBadge += `<span class="pill pill-red" style="margin-left:4px;">✗ ${rejected} Ditolak</span>`;
+
+    html += `<tr style="background:#f0f4ff;">
+      <td colspan="5" style="font-weight:700; font-size:12px; color:#1a56db; padding:8px 14px;">
+        📅 SO Tanggal : ${tgl} &nbsp;·&nbsp; ${total} item ${notifBadge}
+      </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="5" class="empty">Belum ada data opname</td></tr>';
+
+    items.forEach(o => {
+      const statusBadge = o.status === 'approved'
+        ? `<span class="pill pill-green">✓ Disetujui</span>`
+        : o.status === 'rejected'
+          ? `<span class="pill pill-red">✗ Ditolak</span>`
+          : `<span class="pill" style="background:#fef3c7;color:#d97706;">⏳ Menunggu Admin</span>`;
+      html += `<tr>
+        <td style="font-size:12px;">${o.created_at}</td>
+        <td>${o.product_name}</td>
+        <td>${o.location === 'warehouse' ? 'MIOF' : 'MIPL'}</td>
+        <td><b>${o.stock_fisik}</b></td>
+        <td>${statusBadge}</td>
+      </tr>`;
+    });
+  });
+
+  tbody.innerHTML = html;
 }
 
 async function approveOpname(id){
@@ -1675,6 +1733,68 @@ async function rejectOpname(id){
     toast('Opname ditolak');
     loadOpnameHistory();
   } catch(e){ toast(e.message, 'error'); }
+}
+
+// ===== APPROVE SEMUA / TERPILIH =====
+async function approveAllPendingOpname(){
+  const semuaPending = Array.from(document.querySelectorAll('.opname-chk:not(:disabled)'));
+  const yangDicentang = Array.from(document.querySelectorAll('.opname-chk:checked'));
+
+  // Kalau ada yg dicentang → approve yg dicentang saja. Kalau tidak ada yg dicentang → approve semua pending
+  const targets = yangDicentang.length > 0 ? yangDicentang : semuaPending;
+
+  if (targets.length === 0) {
+    return toast('Tidak ada opname pending', 'error');
+  }
+
+  const label = yangDicentang.length > 0
+    ? `${targets.length} opname yang dicentang`
+    : `SEMUA ${targets.length} opname pending`;
+
+  if (!confirm(`Approve ${label}?\nStok akan diperbarui sesuai hitung fisik kasir.`)) return;
+
+  let sukses = 0, gagal = 0;
+  for (const el of targets) {
+    try {
+      await api('/opname/' + el.value + '/approve', 'POST');
+      sukses++;
+    } catch(e) { gagal++; }
+  }
+
+  toast(`✅ ${sukses} opname di-approve` + (gagal > 0 ? ` · ${gagal} gagal` : ''), 'success');
+  loadOpnameHistory();
+  loadDashboard();
+}
+
+// ===== TOLAK TERPILIH =====
+async function rejectCheckedOpname(){
+  const yangDicentang = Array.from(document.querySelectorAll('.opname-chk:checked'));
+
+  if (yangDicentang.length === 0) {
+    return toast('Centang dulu baris opname yang ingin ditolak', 'error');
+  }
+
+  if (!confirm(`Tolak ${yangDicentang.length} opname yang dicentang?\nStok tidak akan berubah.`)) return;
+
+  let sukses = 0, gagal = 0;
+  for (const el of yangDicentang) {
+    try {
+      await api('/opname/' + el.value + '/reject', 'POST');
+      sukses++;
+    } catch(e) { gagal++; }
+  }
+
+  toast(`${sukses} opname ditolak` + (gagal > 0 ? ` · ${gagal} gagal` : ''));
+  loadOpnameHistory();
+}
+
+// ===== CENTANG / UNCENTANG SEMUA PENDING =====
+function toggleSelectAllOpname(masterChk){
+  const boxes = document.querySelectorAll('.opname-chk:not(:disabled)');
+  boxes.forEach(c => { c.checked = masterChk.checked; });
+  masterChk.indeterminate = false;
+  // Reuse onOpnameChkChange untuk update label tombol
+  onOpnameChkChange();
 }
 
 async function editOpnameQty(id, currentQty){
