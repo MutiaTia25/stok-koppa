@@ -591,7 +591,7 @@ app.get('/api/logs', authMiddleware, (req, res) => {
   let sql = `SELECT l.*, p.name as product_name, c.name as category_name FROM stock_logs l
     JOIN products p ON p.id=l.product_id
     JOIN categories c ON c.id=p.category_id
-    WHERE (l.note IS NULL OR l.note NOT LIKE '[OPNAME]%')`;
+    WHERE (l.note IS NULL OR (l.note NOT LIKE '[OPNAME]%' AND l.note NOT LIKE '[OPNAME APPROVE]%'))`;
   const params = [];
   if (from) { sql += ` AND date(l.created_at) >= date(?)`; params.push(from); }
   if (to) { sql += ` AND date(l.created_at) <= date(?)`; params.push(to); }
@@ -1071,7 +1071,7 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
     FROM stock_logs l
     JOIN products p ON p.id=l.product_id
     JOIN categories c ON c.id=p.category_id
-    WHERE (l.note IS NULL OR l.note NOT LIKE '[OPNAME]%')
+    WHERE (l.note IS NULL OR (l.note NOT LIKE '[OPNAME]%' AND l.note NOT LIKE '[OPNAME APPROVE]%'))
   `;
   const params = [];
   if (from) { sqlLogs += ` AND date(l.created_at) >= date(?)`; params.push(from); }
