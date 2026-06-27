@@ -477,6 +477,23 @@ tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: #f9fafb; }
 .stock-low { color: var(--red); font-weight: 700; }
 .stock-ok { color: var(--green); font-weight: 700; }
+/* ===== OPNAME CHECKBOX COLUMN ===== */
+#opnameHistoryPanel th:first-child,
+#opnameHistoryPanel td:first-child {
+  padding: 8px 4px;
+  width: 40px;
+  min-width: 40px;
+  text-align: center;
+}
+#opnameHistoryPanel th:first-child input[type=checkbox],
+#opnameHistoryPanel td:first-child input[type=checkbox] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  display: block;
+  margin: 0 auto;
+  flex-shrink: 0;
+}
 
 /* ===== PILLS / BADGES ===== */
 .pill {
@@ -961,7 +978,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
           <table>
             <thead><tr>
               <th id="thCheckbox" style="width:36px;"><input type="checkbox" id="selectAllProducts" onchange="toggleSelectAllProducts(this)"></th>
-              <th>Lokasi</th><th>Barcode</th><th>Produk</th><th>Kategori</th><th>Office</th><th>Mess</th><th>Satuan</th><th>Harga</th><th>Min</th><th>Max</th><th id="thAksi">Aksi</th>
+              <th id="thLokasi">Lokasi</th><th>Barcode</th><th>Produk</th><th>Kategori</th><th id="thOffice">Office</th><th id="thMess">Mess</th><th id="thSatuan">Satuan</th><th>Harga</th><th id="thMin">Min</th><th id="thMax">Max</th><th id="thAksi">Aksi</th>
             </tr></thead>
             <tbody id="productsTable"></tbody>
           </table>
@@ -1114,7 +1131,18 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         <div id="opnameReader" style="width:100%; max-width:400px; display:none; margin-bottom:10px; border-radius:var(--radius); overflow:hidden;"></div>
 
         <div id="opnameHistoryPanel" class="panel" style="display:none;">
-          <h3>📋 Riwayat & Approval Stock Opname</h3>
+          <h3 style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+            <span>📋 Riwayat & Approval Stock Opname</span>
+          </h3>
+          <!-- Bulk Action Bar — selalu tampil untuk admin -->
+          <div id="opnameBulkBar" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; padding:12px 16px; background:#eff6ff; border:1.5px solid #bfd2f9; border-radius:var(--radius);">
+            <span style="font-size:13px; font-weight:700; color:#1a56db;">⚡ Aksi Massal</span>
+            <span style="color:#cbd5e1; font-size:13px;">|</span>
+            <button id="btnBulkApprove" class="btn btn-green btn-sm" onclick="approveAllPendingOpname()">✓ Approve Semua Pending</button>
+            <button id="btnBulkTolak" class="btn btn-red btn-sm" onclick="rejectCheckedOpname()">✗ Tolak Yang Dicentang</button>
+            <span id="opnamePendingCount" style="font-size:12px; color:#6b7280; margin-left:4px;"></span>
+            <span style="font-size:11px; color:#94a3b8; margin-left:auto;">💡 Centang baris tertentu dulu untuk pilih sebagian</span>
+          </div>
           <div class="toolbar">
             <input type="date" id="opFrom" onchange="loadOpnameHistory()">
             <input type="date" id="opTo" onchange="loadOpnameHistory()">
@@ -1128,9 +1156,10 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
           <div class="table-wrap">
             <table>
               <thead><tr>
+                <th style="width:44px;min-width:44px;padding:8px 4px;text-align:center;"><input type="checkbox" id="selectAllOpname" onchange="toggleSelectAllOpname(this)" title="Pilih semua pending" style="width:16px;height:16px;cursor:pointer;"></th>
                 <th>Waktu</th><th>Petugas</th><th>Produk</th><th>Lokasi</th>
                 <th>Stok Fisik</th><th>Stok Sistem</th><th>Selisih</th>
-                <th>Status</th><th>Aksi</th>
+                <th>Status</th>
               </tr></thead>
               <tbody id="opnameTable"></tbody>
             </table>
