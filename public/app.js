@@ -180,6 +180,8 @@ async function loadDashboard(){
     // Sembunyikan panel produk perlu perhatian untuk kasir
     const adminPanel = document.getElementById('dashAdminPanel');
     adminPanel.style.display = 'none';
+    const dashGrid = adminPanel.closest('.grid-2');
+    if (dashGrid) dashGrid.style.gridTemplateColumns = '1fr';
     try {
       const ctx = document.getElementById('categoryChart');
       const labels = sum.byCategory.map(c => c.name);
@@ -197,7 +199,10 @@ async function loadDashboard(){
   }
 
   // ===== ADMIN: tampilan lengkap =====
-  document.getElementById('dashAdminPanel').style.display = '';
+  const adminPanel = document.getElementById('dashAdminPanel');
+  adminPanel.style.display = '';
+  const dashGrid = adminPanel.closest('.grid-2');
+  if (dashGrid) dashGrid.style.gridTemplateColumns = '';
   const sum = await api('/summary');
   const cardsEl = document.getElementById('dashCards');
   cardsEl.innerHTML = `
@@ -1570,13 +1575,9 @@ async function submitOpname() {
     else payload.stock_fisik_display = stock_fisik;
 
     const result = await api('/opname', 'POST', payload);
-    if (currentUser.role === 'admin') {
-      const selisih = result?.results?.[0]?.selisih ?? result?.selisih ?? 0;
-      if (selisih === 0) toast('✅ Opname disimpan, stok sesuai!', 'success');
-      else toast(`✅ Opname disimpan. Selisih: ${selisih > 0 ? '+' : ''}${selisih}`, 'success');
-    } else {
-      toast('✅ Opname disimpan!', 'success');
-    }
+    const selisih = result?.results?.[0]?.selisih ?? result?.selisih ?? 0;
+    if (selisih === 0) toast('✅ Opname disimpan, stok sesuai!', 'success');
+    else toast(`✅ Opname disimpan. Selisih: ${selisih > 0 ? '+' : ''}${selisih}`, 'success');
 
     // Reset form siap scan produk berikutnya
     resetOpnameForm();
