@@ -109,11 +109,11 @@ function addColumnIfMissing(table, column, definition) {
 }
 
 addColumnIfMissing('products', 'display_stock', 'INTEGER NOT NULL DEFAULT 0');
-addColumnIfMissing('products', 'display_min', 'INTEGER NOT NULL DEFAULT 5');
-addColumnIfMissing('products', 'display_max', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('products', 'display_min', 'INTEGER NOT NULL DEFAULT 48');
+addColumnIfMissing('products', 'display_max', 'INTEGER NOT NULL DEFAULT 1000');
 addColumnIfMissing('products', 'warehouse_stock', 'INTEGER NOT NULL DEFAULT 0');
-addColumnIfMissing('products', 'warehouse_min', 'INTEGER NOT NULL DEFAULT 5');
-addColumnIfMissing('products', 'warehouse_max', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('products', 'warehouse_min', 'INTEGER NOT NULL DEFAULT 48');
+addColumnIfMissing('products', 'warehouse_max', 'INTEGER NOT NULL DEFAULT 1000');
 addColumnIfMissing('users', 'full_name', 'TEXT');
 addColumnIfMissing('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('users', 'created_at', `TEXT DEFAULT (datetime('now','localtime'))`);
@@ -124,6 +124,26 @@ addColumnIfMissing('stock_opname','approved_at','TEXT');
 addColumnIfMissing('products', 'barcode', 'TEXT');
 addColumnIfMissing('products','default_location',"TEXT NOT NULL DEFAULT 'office'");
 addColumnIfMissing('products', 'unit', "TEXT DEFAULT 'PCS'");
+
+// ===== MIGRASI: gabung stok Gudang + Mart jadi SATU stok per lokasi =====
+// Aplikasi sekarang cuma bedain 2 LOKASI (MIOF/Office & MIMS/Mess), bukan lagi
+// gudang vs mart di dalam satu lokasi. Aman dijalankan berkali-kali — begitu
+// display_stock sudah 0 semua, penjumlahan berikutnya tidak mengubah apa-apa.
+db.exec(`UPDATE products SET warehouse_stock = warehouse_stock + display_stock, display_stock = 0 WHERE display_stock != 0`);
+
+// ===== MIGRASI: standarisasi Min 48 / Max 1000 untuk SEMUA produk =====
+// Kebijakan perusahaan: setiap produk, di lokasi manapun, pakai standar
+// Min Stok = 48 dan Max Stok = 1000 — tidak ada yang kosong atau beda sendiri.
+// Ini migrasi SEKALI JALAN (ditandai di tabel _migrations) supaya kalau admin
+// nanti mengubah Min/Max satu produk secara manual, perubahan itu tidak
+// otomatis ditimpa lagi tiap kali server restart.
+db.exec(`CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now','localtime')))`);
+const MIGRATION_NAME = 'standardize_min48_max1000';
+const alreadyApplied = db.prepare('SELECT 1 FROM _migrations WHERE name=?').get(MIGRATION_NAME);
+if (!alreadyApplied) {
+  db.exec(`UPDATE products SET warehouse_min = 48, warehouse_max = 1000`);
+  db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(MIGRATION_NAME);
+}
 
 // ===== MIGRASI: Pisahkan [SKU] dari nama produk yang belum dipisah =====
 // Jalankan sekali — produk dengan nama format "[xxx] Nama" dipecah jadi sku + nama bersih
@@ -157,7 +177,7 @@ if (columnExists('products', 'stock')) {
     const current = db.prepare('SELECT warehouse_stock, warehouse_min FROM products WHERE id=?').get(r.id);
     if (current && current.warehouse_stock === 0 && r.stock) {
       db.prepare('UPDATE products SET warehouse_stock=?, warehouse_min=? WHERE id=?')
-        .run(r.stock || 0, r.min_stock || 5, r.id);
+        .run(r.stock || 0, r.min_stock || 48, r.id);
     }
   });
 }
@@ -181,8 +201,27 @@ if (userCount === 0) {
 }
 const catCount = db.prepare('SELECT COUNT(*) c FROM categories').get().c;
 if (catCount === 0) {
-  ['Makanan','Minuman','Sembako','Kebersihan','Lainnya'].forEach(c =>
+  ['Makanan','Minuman','Rokok','Lainnya'].forEach(c =>
     db.prepare('INSERT INTO categories (name) VALUES (?)').run(c));
+}
+
+// ===== MIGRASI: kategori dibatasi hanya Makanan/Minuman/Rokok/Lainnya =====
+// Kategori lain yang mungkin sempat kebuat (mis. dari import lama: Sembako,
+// Kebersihan, dll) digabung ke "Lainnya" supaya daftar kategori tetap rapi.
+// Aman dijalankan berkali-kali (begitu sudah rapi, tidak ada lagi yang perlu digabung).
+{
+  const ALLOWED_CATEGORIES = ['MAKANAN', 'MINUMAN', 'ROKOK', 'LAINNYA'];
+  let lainnya = db.prepare('SELECT id FROM categories WHERE UPPER(name)=?').get('LAINNYA');
+  if (!lainnya) {
+    db.prepare('INSERT INTO categories (name) VALUES (?)').run('Lainnya');
+    lainnya = db.prepare('SELECT id FROM categories WHERE UPPER(name)=?').get('LAINNYA');
+  }
+  const stray = db.prepare('SELECT id, name FROM categories WHERE UPPER(name) NOT IN (?,?,?,?)')
+    .all(...ALLOWED_CATEGORIES);
+  for (const cat of stray) {
+    db.prepare('UPDATE products SET category_id=? WHERE category_id=?').run(lainnya.id, cat.id);
+    db.prepare('DELETE FROM categories WHERE id=?').run(cat.id);
+  }
 }
 
 // ===== MIDDLEWARE: AUTH =====
@@ -294,12 +333,9 @@ app.delete('/api/categories/:id', authMiddleware, adminOnly, (req, res) => {
 
 // ===== HELPER: tambahkan field turunan (total_stock, reorder_qty, dll) ke baris produk =====
 function enrichProduct(p) {
-  p.total_stock = p.warehouse_stock + p.display_stock;
+  p.total_stock = p.warehouse_stock;
   p.warehouse_reorder_qty = p.warehouse_stock <= p.warehouse_min
     ? Math.max(0, p.warehouse_min - p.warehouse_stock)
-    : 0;
-  p.display_refill_qty = p.display_stock <= p.display_min
-    ? Math.max(0, p.display_min - p.display_stock)
     : 0;
   return p;
 }
@@ -307,8 +343,7 @@ function enrichProduct(p) {
 // ===== PRODUCTS (CRUD) =====
 app.get('/api/products', authMiddleware, (req, res) => {
   const { category_id, q } = req.query;
-  let sql = `SELECT p.id, p.name, p.category_id, p.price, p.sku, p.barcode, p.default_location as location,
-                    p.display_stock, p.display_min, p.display_max,
+  let sql = `SELECT p.id, p.name, p.category_id, p.price, p.sku, p.barcode, p.unit, p.default_location as location,
                     p.warehouse_stock, p.warehouse_min, p.warehouse_max,
                     c.name as category_name
              FROM products p
@@ -356,9 +391,6 @@ app.post('/api/products', authMiddleware, (req, res) => {
     barcode,
     unit,
     location,
-    display_stock,
-    display_min,
-    display_max,
     warehouse_stock,
     warehouse_min,
     warehouse_max
@@ -366,9 +398,12 @@ app.post('/api/products', authMiddleware, (req, res) => {
 
   if (!name || !category_id) return res.status(400).json({ error: 'Nama dan kategori wajib diisi' });
 
+  const siteLoc = location || 'office';
   if (barcode) {
-    const dup = db.prepare('SELECT id FROM products WHERE barcode=?').get(barcode);
-    if (dup) return res.status(400).json({ error: 'Barcode ini sudah dipakai produk lain' });
+    // Barcode boleh sama di 2 site (MIOF & MIMS) karena itu 2 lokasi terpisah;
+    // yang tidak boleh duplikat adalah barcode+site yang SAMA.
+    const dup = db.prepare('SELECT id FROM products WHERE barcode=? AND default_location=?').get(barcode, siteLoc);
+    if (dup) return res.status(400).json({ error: `Barcode ini sudah dipakai produk lain di site ${siteLoc === 'mess' ? 'MIMS/Mess' : 'MIOF/Office'}` });
   }
 
   const r = db.prepare(`
@@ -380,14 +415,11 @@ INSERT INTO products (
   barcode,
   unit,
   default_location,
-  display_stock,
-  display_min,
-  display_max,
   warehouse_stock,
   warehouse_min,
   warehouse_max
 )
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+VALUES (?,?,?,?,?,?,?,?,?,?)
 `).run(
   name,
   category_id,
@@ -395,13 +427,10 @@ VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
   sku || '',
   barcode || '',
   unit || 'PCS',
-  location || 'office',
-  display_stock || 0,
-  display_min || 5,
-  display_max || 0,
+  siteLoc,
   warehouse_stock || 0,
-  warehouse_min || 5,
-  warehouse_max || 0
+  warehouse_min || 48,
+  warehouse_max || 1000
 );
 
   res.json({ id: r.lastInsertRowid });
@@ -416,17 +445,16 @@ app.put('/api/products/:id', authMiddleware, (req, res) => {
   location,
   barcode,
   unit,
-  display_min,
-  display_max,
   warehouse_min,
   warehouse_max
 } = req.body;
 
   if (!name || !category_id) return res.status(400).json({ error: 'Nama dan kategori wajib diisi' });
 
+  const siteLoc = location || 'office';
   if (barcode) {
-    const dup = db.prepare('SELECT id FROM products WHERE barcode=? AND id<>?').get(barcode, req.params.id);
-    if (dup) return res.status(400).json({ error: 'Barcode ini sudah dipakai produk lain' });
+    const dup = db.prepare('SELECT id FROM products WHERE barcode=? AND default_location=? AND id<>?').get(barcode, siteLoc, req.params.id);
+    if (dup) return res.status(400).json({ error: `Barcode ini sudah dipakai produk lain di site ${siteLoc === 'mess' ? 'MIMS/Mess' : 'MIOF/Office'}` });
   }
 
   db.prepare(`
@@ -438,8 +466,6 @@ sku=?,
 barcode=?,
 unit=?,
 default_location=?,
-display_min=?,
-display_max=?,
 warehouse_min=?,
 warehouse_max=?
 WHERE id=? `)
@@ -450,11 +476,9 @@ WHERE id=? `)
   sku || '',
   barcode || '',
   unit || 'PCS',
-  location || 'office',
-  display_min || 5,
-  display_max || 0,
-  warehouse_min || 5,
-  warehouse_max || 0,
+  siteLoc,
+  warehouse_min || 48,
+  warehouse_max || 1000,
   req.params.id
 );
 
@@ -475,10 +499,11 @@ app.delete('/api/products/:id', authMiddleware, adminOnly, (req, res) => {
   }
 });
 
-// ===== STOCK IN / OUT (selalu di OFFICE) =====
-// "Masuk" = barang diterima dari supplier ke gudang.
+// ===== STOCK IN / OUT (di GUDANG lokasi produk yang bersangkutan) =====
+// Setiap produk sudah terikat ke satu lokasi (default_location: office/mess).
+// "Masuk" = barang diterima dari supplier ke gudang lokasi produk itu.
 // "Keluar" = barang keluar dari gudang (misalnya rusak/hilang/retur ke supplier).
-// Untuk memindahkan barang dari gudang ke rak pajangan (display), gunakan endpoint /api/transfer.
+// Untuk memindahkan barang dari gudang ke rak pajangan DALAM lokasi yang sama, gunakan /api/transfer.
 app.post('/api/stock/in', authMiddleware, (req, res) => {
   const { product_id, qty, note, date } = req.body;
   if (!product_id || !qty || qty <= 0) return res.status(400).json({ error: 'Jumlah tidak valid' });
@@ -503,7 +528,7 @@ app.post('/api/stock/out', authMiddleware, (req, res) => {
   const prod = db.prepare('SELECT warehouse_stock FROM products WHERE id=?').get(product_id);
   if (!prod) return res.status(404).json({ error: 'Produk tidak ditemukan' });
   if (prod.warehouse_stock < qty) {
-    return res.status(400).json({ error: 'Stok Office tidak cukup. Sisa stok Office: ' + prod.warehouse_stock });
+    return res.status(400).json({ error: 'Stok Gudang tidak cukup. Sisa stok Gudang: ' + prod.warehouse_stock });
   }
 
   db.prepare('UPDATE products SET warehouse_stock = warehouse_stock - ? WHERE id=?').run(qty, product_id);
@@ -519,35 +544,16 @@ app.post('/api/stock/out', authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
-// ===== TRANSFER STOK: OFFICE -> MESS (satu arah saja) =====
-// Barang yang sudah dipindah ke Mess tidak dikembalikan ke Office.
-// Jika barang di Mess rusak/expired, gunakan endpoint /api/disposal untuk memusnahkannya.
-app.post('/api/transfer', authMiddleware, (req, res) => {
-  const { product_id, qty, note } = req.body;
-  if (!product_id || !qty || qty <= 0) return res.status(400).json({ error: 'Jumlah tidak valid' });
-
-  const prod = db.prepare('SELECT warehouse_stock, display_stock FROM products WHERE id=?').get(product_id);
-  if (!prod) return res.status(404).json({ error: 'Produk tidak ditemukan' });
-
-  if (prod.warehouse_stock < qty) return res.status(400).json({ error: 'Stok Office tidak cukup. Sisa stok Office: ' + prod.warehouse_stock });
-  db.prepare('UPDATE products SET warehouse_stock = warehouse_stock - ?, display_stock = display_stock + ? WHERE id=?').run(qty, qty, product_id);
-
-  db.prepare('INSERT INTO stock_transfers (product_id, qty, direction, note, user) VALUES (?,?,?,?,?)')
-    .run(product_id, qty, 'to_display', note || '', req.user.username);
-
-  res.json({ ok: true });
-});
-
-// ===== PEMUSNAHAN STOK MESS (barang rusak / expired) =====
+// ===== PEMUSNAHAN STOK (barang rusak / expired / hilang) =====
 app.post('/api/disposal', authMiddleware, (req, res) => {
   const { product_id, qty, reason, note } = req.body;
   if (!product_id || !qty || qty <= 0) return res.status(400).json({ error: 'Jumlah tidak valid' });
 
-  const prod = db.prepare('SELECT display_stock FROM products WHERE id=?').get(product_id);
+  const prod = db.prepare('SELECT warehouse_stock FROM products WHERE id=?').get(product_id);
   if (!prod) return res.status(404).json({ error: 'Produk tidak ditemukan' });
-  if (prod.display_stock < qty) return res.status(400).json({ error: 'Stok Mess tidak cukup. Sisa stok Mess: ' + prod.display_stock });
+  if (prod.warehouse_stock < qty) return res.status(400).json({ error: 'Stok tidak cukup. Sisa stok: ' + prod.warehouse_stock });
 
-  db.prepare('UPDATE products SET display_stock = display_stock - ? WHERE id=?').run(qty, product_id);
+  db.prepare('UPDATE products SET warehouse_stock = warehouse_stock - ? WHERE id=?').run(qty, product_id);
 
   db.prepare('INSERT INTO stock_disposals (product_id, qty, reason, note, user) VALUES (?,?,?,?,?)')
     .run(product_id, qty, reason || 'lainnya', note || '', req.user.username);
@@ -570,21 +576,6 @@ app.get('/api/disposals', authMiddleware, (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
-app.get('/api/transfers', authMiddleware, (req, res) => {
-  const { from, to } = req.query;
-  let sql = `SELECT t.id, t.product_id, p.name as product_name, c.name as category_name,
-                    t.qty, t.direction, t.note, t.user, t.created_at
-             FROM stock_transfers t
-             JOIN products p ON p.id = t.product_id
-             JOIN categories c ON c.id = p.category_id
-             WHERE 1=1`;
-  const params = [];
-  if (from) { sql += ` AND date(t.created_at) >= date(?)`; params.push(from); }
-  if (to) { sql += ` AND date(t.created_at) <= date(?)`; params.push(to); }
-  sql += ' ORDER BY t.id DESC LIMIT 200';
-  res.json(db.prepare(sql).all(...params));
-});
-
 // ===== STOCK LOGS / HISTORY =====
 app.get('/api/logs', authMiddleware, (req, res) => {
   const { from, to, type, product_id } = req.query;
@@ -604,8 +595,7 @@ app.get('/api/logs', authMiddleware, (req, res) => {
 // ===== CURRENT STOCK =====
 app.get('/api/current-stock', authMiddleware, (req, res) => {
   const data = db.prepare(`
-    SELECT p.id, p.name, c.name AS category_name, p.price,
-           p.display_stock, p.display_min, p.display_max,
+    SELECT p.id, p.name, c.name AS category_name, p.price, p.default_location as location,
            p.warehouse_stock, p.warehouse_min, p.warehouse_max
     FROM products p
     JOIN categories c ON c.id = p.category_id
@@ -617,13 +607,13 @@ app.get('/api/current-stock', authMiddleware, (req, res) => {
 // ===== DASHBOARD SUMMARY =====
 app.get('/api/summary', authMiddleware, (req, res) => {
   const totalProducts = db.prepare('SELECT COUNT(*) c FROM products').get().c;
-  const totalStock = db.prepare('SELECT COALESCE(SUM(display_stock + warehouse_stock),0) s FROM products').get().s;
-  const totalValue = db.prepare('SELECT COALESCE(SUM((display_stock + warehouse_stock) * price),0) v FROM products').get().v;
+  const totalStock = db.prepare('SELECT COALESCE(SUM(warehouse_stock),0) s FROM products').get().s;
+  const totalValue = db.prepare('SELECT COALESCE(SUM(warehouse_stock * price),0) v FROM products').get().v;
 
   const byCategory = db.prepare(`
     SELECT c.name, COUNT(p.id) jumlah_produk,
-           COALESCE(SUM(p.display_stock + p.warehouse_stock),0) total_stok,
-           COALESCE(SUM((p.display_stock + p.warehouse_stock) * p.price),0) nilai_stok
+           COALESCE(SUM(p.warehouse_stock),0) total_stok,
+           COALESCE(SUM(p.warehouse_stock * p.price),0) nilai_stok
     FROM categories c LEFT JOIN products p ON p.category_id=c.id
     GROUP BY c.id ORDER BY c.name
   `).all();
@@ -633,9 +623,7 @@ app.get('/api/summary', authMiddleware, (req, res) => {
     p.id,
     p.name,
     c.name as category_name,
-    p.display_stock,
-    p.display_min,
-    p.display_max,
+    p.default_location as location,
     p.warehouse_stock,
     p.warehouse_min,
     p.warehouse_max
@@ -644,15 +632,12 @@ app.get('/api/summary', authMiddleware, (req, res) => {
 
   WHERE
     p.warehouse_stock <= p.warehouse_min
-    OR
-    p.display_stock <= p.display_min
 
   ORDER BY p.name
 `).all().map(enrichProduct);
 
   const todayIn = db.prepare(`SELECT COALESCE(SUM(qty),0) s FROM stock_logs WHERE type='in' AND date(created_at)=date('now','localtime')`).get().s;
   const todayOut = db.prepare(`SELECT COALESCE(SUM(qty),0) s FROM stock_logs WHERE type='out' AND date(created_at)=date('now','localtime')`).get().s;
-  console.log('LOW STOCK:', lowStockItems);
 
   res.json({ totalProducts, totalStock, totalValue, byCategory, lowStockItems, todayIn, todayOut });
 });
@@ -678,15 +663,13 @@ app.get('/api/report', authMiddleware, (req, res) => {
   res.json(data);
 });
 
-// ===== LOW STOCK (total gudang+display <= total minimum) =====
+// ===== LOW STOCK (stok <= minimum) =====
 app.get('/api/low-stock', authMiddleware, (req, res) => {
   const data = db.prepare(`
-    SELECT id, name, display_stock, warehouse_stock,
-           (display_stock + warehouse_stock) as total_stock,
-           (display_min + warehouse_min) as total_min
+    SELECT id, name, warehouse_stock as total_stock, warehouse_min as total_min
     FROM products
-    WHERE (display_stock + warehouse_stock) <= (display_min + warehouse_min)
-    ORDER BY total_stock ASC
+    WHERE warehouse_stock <= warehouse_min
+    ORDER BY warehouse_stock ASC
   `).all();
   res.json(data);
 });
@@ -694,9 +677,8 @@ app.get('/api/low-stock', authMiddleware, (req, res) => {
 // ===== STOCK OPNAME =====
 app.get('/api/opname/products', authMiddleware, (req, res) => {
   const data = db.prepare(`
-    SELECT p.id, p.name, p.sku, p.barcode, p.unit, c.name as category_name,
-           p.warehouse_stock, p.warehouse_min, p.warehouse_max,
-           p.display_stock, p.display_min, p.display_max
+    SELECT p.id, p.name, p.sku, p.barcode, p.unit, p.default_location as location, c.name as category_name,
+           p.warehouse_stock, p.warehouse_min, p.warehouse_max
     FROM products p JOIN categories c ON c.id=p.category_id
     ORDER BY p.name
   `).all();
@@ -708,20 +690,26 @@ app.get('/api/opname/products', authMiddleware, (req, res) => {
 // Kalau belum ada di sistem, frontend menampilkan form tambah produk baru
 // (khusus admin) tanpa harus pindah menu.
 app.get('/api/products/check-barcode/:barcode', authMiddleware, (req, res) => {
-  const product = db.prepare(`
-    SELECT p.id, p.name, p.sku, p.barcode, c.name as category_name,
-           p.warehouse_stock, p.display_stock
+  const { location } = req.query; // optional: 'office' | 'mess' — site yang sedang dikerjakan
+  let sql = `
+    SELECT p.id, p.name, p.sku, p.barcode, p.default_location as location, c.name as category_name,
+           p.warehouse_stock
     FROM products p JOIN categories c ON c.id=p.category_id
     WHERE p.barcode = ?
-  `).get(req.params.barcode);
-  res.json({ found: !!product, product: product || null });
+  `;
+  const params = [req.params.barcode];
+  if (location) { sql += ` AND p.default_location = ?`; params.push(location); }
+  const rows = db.prepare(sql).all(...params);
+  // Kalau tidak filter site dan barcode-nya ada di 2 site (MIOF & MIMS), kembalikan semuanya
+  // supaya caller bisa memilih site yang tepat, bukan asal ambil salah satu.
+  res.json({ found: rows.length > 0, product: rows[0] || null, matches: rows });
 });
 
 app.get('/api/opname', authMiddleware, (req, res) => {
   const { from, to, status } = req.query;
   let sql = `
     SELECT o.id, o.product_id, p.name as product_name, c.name as category_name,
-           o.location, o.stock_system, o.stock_fisik, o.selisih, o.user, o.created_at,
+           p.default_location as site, o.location, o.stock_system, o.stock_fisik, o.selisih, o.user, o.created_at,
            o.status, o.approved_by, o.approved_at
     FROM stock_opname o
     JOIN products p ON p.id = o.product_id
@@ -738,7 +726,7 @@ app.get('/api/opname', authMiddleware, (req, res) => {
 
 app.post('/api/opname', authMiddleware, (req, res) => {
   let {
-    product_id, stock_fisik_warehouse, stock_fisik_display, note,
+    product_id, stock_fisik, note,
     new_product_name, new_product_category_id, new_product_sku, new_product_barcode, new_product_price, new_product_location
   } = req.body;
 
@@ -753,92 +741,55 @@ app.post('/api/opname', authMiddleware, (req, res) => {
     if (!new_product_name || !new_product_category_id) {
       return res.status(400).json({ error: 'Nama produk dan kategori wajib diisi untuk produk baru' });
     }
+    const newSiteLoc = new_product_location === 'mess' ? 'mess' : 'office';
     if (new_product_barcode) {
-      const dup = db.prepare('SELECT id FROM products WHERE barcode=?').get(new_product_barcode);
-      if (dup) return res.status(400).json({ error: 'Barcode ini sudah dipakai produk lain' });
+      const dup = db.prepare('SELECT id FROM products WHERE barcode=? AND default_location=?').get(new_product_barcode, newSiteLoc);
+      if (dup) return res.status(400).json({ error: `Barcode ini sudah dipakai produk lain di site ${newSiteLoc === 'mess' ? 'MIMS/Mess' : 'MIOF/Office'}` });
     }
     const r = db.prepare(`
-      INSERT INTO products (name, category_id, price, sku, barcode,default_location, display_stock, display_min, display_max, warehouse_stock, warehouse_min, warehouse_max)
-      VALUES ( ?, ?, ?, ?, ?,'office', 0, 5, 0, 0, 5, 0 )
-    `).run(new_product_name, new_product_category_id,new_product_price || 0, new_product_sku || '', new_product_barcode || '');
+      INSERT INTO products (name, category_id, price, sku, barcode, default_location, warehouse_stock, warehouse_min, warehouse_max)
+      VALUES ( ?, ?, ?, ?, ?, ?, 0, 48, 1000 )
+    `).run(new_product_name, new_product_category_id, new_product_price || 0, new_product_sku || '', new_product_barcode || '', newSiteLoc);
     product_id = r.lastInsertRowid;
   }
 
-  if (
-    stock_fisik_warehouse === undefined &&
-    stock_fisik_display === undefined
-){
-    return res.status(400).json({
-        error:'Isi minimal salah satu stok fisik'
-    });
-}
-
-  const prod = db.prepare('SELECT warehouse_stock, display_stock FROM products WHERE id=?').get(product_id);
-  if (!prod) return res.status(404).json({ error: 'Produk tidak ditemukan' });
-
-  const results = [];
-
-  function processLocation(loc, stock_fisik) {
-    if (stock_fisik === undefined || stock_fisik === null) {
-      throw new Error('Stok fisik wajib diisi');
-    }
-    if (stock_fisik < 0) throw new Error('Stok fisik tidak boleh negatif');
-
-    const stock_system = loc === 'warehouse' ? prod.warehouse_stock : prod.display_stock;
-    const selisih = stock_fisik - stock_system;
-    const isAdmin = req.user.role === 'admin';
-    // Kasir → pending (stok belum berubah, tunggu approve admin)
-    // Admin → approved langsung, stok langsung berubah
-    const status = isAdmin ? 'approved' : 'pending';
-
-    db.prepare(`
-      INSERT INTO stock_opname (product_id, location, stock_system, stock_fisik, selisih, user, status, approved_by, approved_at)
-      VALUES (?,?,?,?,?,?,?,?,?)
-    `).run(
-      product_id, loc, stock_system, stock_fisik, selisih,
-      req.user.username, status,
-      isAdmin ? req.user.username : null,
-      isAdmin ? new Date().toISOString() : null
-    );
-
-    // Hanya update stok kalau admin (langsung) atau sudah di-approve
-    if (isAdmin && selisih !== 0) {
-      const column = loc === 'warehouse' ? 'warehouse_stock' : 'display_stock';
-      db.prepare(`UPDATE products SET ${column}=? WHERE id=?`).run(stock_fisik, product_id);
-      const adjType = selisih > 0 ? 'in' : 'out';
-      const locLabel = loc === 'warehouse' ? 'Office' : 'Mess';
-      db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
-        .run(product_id, adjType, Math.abs(selisih), `[OPNAME] ${note || ''} Penyesuaian stok ${locLabel} (selisih ${selisih > 0 ? '+' : ''}${selisih})`, req.user.username);
-    }
-
-    results.push({ location: loc, stock_system, stock_fisik, selisih, status });
+  if (stock_fisik === undefined || stock_fisik === null) {
+    return res.status(400).json({ error: 'Isi qty hasil hitung fisik' });
+  }
+  stock_fisik = Number(stock_fisik);
+  if (isNaN(stock_fisik) || stock_fisik < 0) {
+    return res.status(400).json({ error: 'Stok fisik tidak boleh negatif' });
   }
 
-  try {
+  const prod = db.prepare('SELECT warehouse_stock FROM products WHERE id=?').get(product_id);
+  if (!prod) return res.status(404).json({ error: 'Produk tidak ditemukan' });
 
-    if(stock_fisik_warehouse !== undefined){
-        processLocation(
-            'warehouse',
-            Number(stock_fisik_warehouse)
-        );
-    }
+  const stock_system = prod.warehouse_stock;
+  const selisih = stock_fisik - stock_system;
+  const isAdmin = req.user.role === 'admin';
+  // Kasir → pending (stok belum berubah, tunggu approve admin)
+  // Admin → approved langsung, stok langsung berubah
+  const status = isAdmin ? 'approved' : 'pending';
 
-    if(stock_fisik_display !== undefined){
-        processLocation(
-            'display',
-            Number(stock_fisik_display)
-        );
-    }
+  db.prepare(`
+    INSERT INTO stock_opname (product_id, location, stock_system, stock_fisik, selisih, user, status, approved_by, approved_at)
+    VALUES (?,'warehouse',?,?,?,?,?,?,?)
+  `).run(
+    product_id, stock_system, stock_fisik, selisih,
+    req.user.username, status,
+    isAdmin ? req.user.username : null,
+    isAdmin ? new Date().toISOString() : null
+  );
 
-} catch(e){
+  // Hanya update stok kalau admin (langsung) atau sudah di-approve
+  if (isAdmin && selisih !== 0) {
+    db.prepare(`UPDATE products SET warehouse_stock=? WHERE id=?`).run(stock_fisik, product_id);
+    const adjType = selisih > 0 ? 'in' : 'out';
+    db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
+      .run(product_id, adjType, Math.abs(selisih), `[OPNAME] ${note || ''} Penyesuaian stok (selisih ${selisih > 0 ? '+' : ''}${selisih})`, req.user.username);
+  }
 
-    return res.status(400).json({
-        error:e.message
-    });
-
-}
-
-  res.json({ ok: true, product_id, results });
+  res.json({ ok: true, product_id, stock_system, stock_fisik, selisih, status });
 });
 
 // ===== APPROVE OPNAME (ADMIN) =====
@@ -847,19 +798,19 @@ app.post('/api/opname/:id/approve', authMiddleware, adminOnly, (req, res) => {
   if (!opname) return res.status(404).json({ error: 'Data opname tidak ditemukan' });
   if (opname.status === 'approved') return res.status(400).json({ error: 'Opname ini sudah di-approve' });
 
-  const prod = db.prepare('SELECT warehouse_stock, display_stock FROM products WHERE id=?').get(opname.product_id);
+  const prod = db.prepare('SELECT warehouse_stock FROM products WHERE id=?').get(opname.product_id);
   if (!prod) return res.status(404).json({ error: 'Produk tidak ditemukan' });
 
   // Update stok produk
   if (opname.selisih !== 0) {
-    const column = opname.location === 'warehouse' ? 'warehouse_stock' : 'display_stock';
-    db.prepare(`UPDATE products SET ${column}=? WHERE id=?`).run(opname.stock_fisik, opname.product_id);
+    db.prepare(`UPDATE products SET warehouse_stock=? WHERE id=?`).run(opname.stock_fisik, opname.product_id);
     const adjType = opname.selisih > 0 ? 'in' : 'out';
-    const locLabel = opname.location === 'warehouse' ? 'Office' : 'Mess';
+    // "Petugas" di riwayat = yang benar-benar input/hitung fisiknya (opname.user),
+    // BUKAN admin yang approve. Siapa yang approve tetap dicatat di teks catatan.
     db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
       .run(opname.product_id, adjType, Math.abs(opname.selisih),
-        `[OPNAME APPROVE] Disetujui oleh ${req.user.username}. Penyesuaian stok ${locLabel} (selisih ${opname.selisih > 0 ? '+' : ''}${opname.selisih})`,
-        req.user.username);
+        `[OPNAME APPROVE] Disetujui oleh ${req.user.username}. Penyesuaian stok (selisih ${opname.selisih > 0 ? '+' : ''}${opname.selisih})`,
+        opname.user);
   }
 
   db.prepare(`UPDATE stock_opname SET status='approved', approved_by=?, approved_at=datetime('now','localtime') WHERE id=?`)
@@ -903,7 +854,7 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   if (to) { where += ' AND DATE(o.created_at) <= ?'; params.push(to); }
   if (status) { where += ' AND o.status = ?'; params.push(status); }
   const rows = db.prepare(`
-    SELECT p.barcode, p.name as product_name, o.location, o.stock_fisik, o.stock_system, o.selisih, o.user, o.created_at, o.status
+    SELECT p.barcode, p.name as product_name, p.default_location as site, o.location, o.stock_fisik, o.stock_system, o.selisih, o.user, o.created_at, o.status
     FROM stock_opname o
     JOIN products p ON p.id = o.product_id
     ${where}
@@ -915,7 +866,8 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   sheet.columns = [
     { header: 'Barcode', key: 'barcode', width: 18 },
     { header: 'Nama Produk', key: 'product_name', width: 30 },
-    { header: 'Lokasi', key: 'location', width: 10 },
+    { header: 'Site', key: 'site', width: 10 },
+    { header: 'Tipe Stok', key: 'location', width: 12 },
     { header: 'Qty SO (Fisik)', key: 'stock_fisik', width: 14 },
     { header: 'Stok Sistem', key: 'stock_system', width: 14 },
     { header: 'Selisih', key: 'selisih', width: 10 },
@@ -924,7 +876,11 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
     { header: 'Status', key: 'status', width: 12 },
   ];
   sheet.getRow(1).font = { bold: true };
-  rows.forEach(r => sheet.addRow({ ...r, location: r.location === 'warehouse' ? 'Office' : 'Mess' }));
+  rows.forEach(r => sheet.addRow({
+    ...r,
+    site: r.site === 'mess' ? 'MIMS/Mess' : 'MIOF/Office',
+    location: r.location === 'warehouse' ? 'Gudang' : 'Mart'
+  }));
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="stock-opname.xlsx"');
   await workbook.xlsx.write(res);
@@ -935,9 +891,7 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
 app.get('/api/export/products', authMiddleware, async (req, res) => {
   const products = db.prepare(`
     SELECT p.default_location as lokasi, p.barcode, p.name, p.sku, c.name as category, p.price,
-           p.warehouse_stock, p.display_stock,
-           (p.warehouse_stock + p.display_stock) as total_stock,
-           p.warehouse_min, p.warehouse_max, p.display_min, p.display_max, p.unit
+           p.warehouse_stock, p.warehouse_min, p.warehouse_max, p.unit
     FROM products p JOIN categories c ON c.id=p.category_id ORDER BY c.name, p.name
   `).all();
 
@@ -947,7 +901,7 @@ app.get('/api/export/products', authMiddleware, async (req, res) => {
   const sheet = workbook.addWorksheet('Data Produk');
 
   // ---- Title block ----
-  sheet.mergeCells('A1:M1');
+  sheet.mergeCells('A1:J1');
   const titleCell = sheet.getCell('A1');
   titleCell.value = 'DATA PRODUK KOPPA STOK';
   titleCell.font = { size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -955,7 +909,7 @@ app.get('/api/export/products', authMiddleware, async (req, res) => {
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0C2D6B' } };
   sheet.getRow(1).height = 36;
 
-  sheet.mergeCells('A2:M2');
+  sheet.mergeCells('A2:J2');
   const subCell = sheet.getCell('A2');
   subCell.value = `Tanggal Cetak : ${new Date().toLocaleString('id-ID')}   |   Total Produk : ${products.length}`;
   subCell.font = { size: 10, italic: true, color: { argb: 'FF1A56DB' } };
@@ -973,14 +927,11 @@ app.get('/api/export/products', authMiddleware, async (req, res) => {
     { key: 'unit',            width: 8  },
     { key: 'price',           width: 14 },
     { key: 'warehouse_stock', width: 13 },
-    { key: 'display_stock',   width: 13 },
-    { key: 'total_stock',     width: 12 },
     { key: 'warehouse_min',   width: 11 },
     { key: 'warehouse_max',   width: 11 },
-    { key: 'display_min',     width: 11 },
   ];
 
-  const headers = ['Lokasi','Barcode','Nama Produk','SKU','Kategori','Satuan','Harga','Stok MIOF','Stok MIPL','Total Stok','Min MIOF','Max MIOF','Min MIPL'];
+  const headers = ['Lokasi','Barcode','Nama Produk','SKU','Kategori','Satuan','Harga','Stok','Min','Max'];
   const headerRow = sheet.getRow(3);
   headers.forEach((h, i) => {
     const cell = headerRow.getCell(i + 1);
@@ -995,7 +946,7 @@ app.get('/api/export/products', authMiddleware, async (req, res) => {
   // ---- Data rows ----
   products.forEach((p, idx) => {
     const row = sheet.addRow([
-      p.lokasi === 'mess' ? 'MIPL' : 'MIOF',
+      p.lokasi === 'mess' ? 'MIMS' : 'MIOF',
       p.barcode || '-',
       p.name,
       p.sku || '-',
@@ -1003,11 +954,8 @@ app.get('/api/export/products', authMiddleware, async (req, res) => {
       p.unit || 'PCS',
       p.price,
       p.warehouse_stock,
-      p.display_stock,
-      p.total_stock,
       p.warehouse_min,
       p.warehouse_max,
-      p.display_min,
     ]);
     const isEven = idx % 2 === 0;
     const bgColor = isEven ? 'FFF9FAFB' : 'FFFFFFFF';
@@ -1020,7 +968,7 @@ app.get('/api/export/products', authMiddleware, async (req, res) => {
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
       }
       if (colNum === 7) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'right' }; }
-      if ([8,9,10,11,12,13].includes(colNum)) { cell.alignment = { horizontal: 'center' }; }
+      if ([8,9,10].includes(colNum)) { cell.alignment = { horizontal: 'center' }; }
     });
     row.height = 18;
   });
@@ -1030,9 +978,9 @@ app.get('/api/export/products', authMiddleware, async (req, res) => {
   sheet.mergeCells(`A${lastR}:D${lastR}`);
   sheet.getCell(`A${lastR}`).value = `Total : ${products.length} produk`;
   sheet.getCell(`A${lastR}`).font = { bold: true, size: 10, color: { argb: 'FF1A56DB' } };
-  sheet.getCell(`M${lastR + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
-  sheet.getCell(`M${lastR + 5}`).value = 'Administrator';
-  sheet.getCell(`M${lastR + 9}`).value = '(____________________)';
+  sheet.getCell(`J${lastR + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
+  sheet.getCell(`J${lastR + 5}`).value = 'Administrator';
+  sheet.getCell(`J${lastR + 9}`).value = '(____________________)';
 
   sheet.views = [{ state: 'frozen', ySplit: 3 }];
 
@@ -1061,13 +1009,13 @@ app.get('/api/products/by-barcode/:barcode', authMiddleware, (req, res) => {
   res.json(product);
 
 });
-// ===== EXPORT TO EXCEL: RIWAYAT STOK OFFICE + DISTRIBUSI =====
+// ===== EXPORT TO EXCEL: RIWAYAT STOK =====
 app.get('/api/export/logs', authMiddleware, async (req, res) => {
   const { from, to, type } = req.query;
 
-  // --- Query stok office (tanpa opname) ---
+  // --- Query stok (semua site) ---
   let sqlLogs = `
-    SELECT l.created_at, p.name as product_name, c.name as category_name, l.type, l.qty, l.note, l.user
+    SELECT l.created_at, p.name as product_name, c.name as category_name, p.default_location as site, l.type, l.qty, l.note, l.user
     FROM stock_logs l
     JOIN products p ON p.id=l.product_id
     JOIN categories c ON c.id=p.category_id
@@ -1079,21 +1027,6 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
   if (type && type !== 'all') { sqlLogs += ` AND l.type=?`; params.push(type); }
   sqlLogs += ` ORDER BY l.id DESC`;
   const logs = db.prepare(sqlLogs).all(...params);
-
-  // --- Query distribusi ---
-  let sqlTr = `
-    SELECT t.created_at, p.name as product_name, c.name as category_name,
-           t.direction, t.qty, t.note, t.user
-    FROM stock_transfers t
-    JOIN products p ON p.id=t.product_id
-    JOIN categories c ON c.id=p.category_id
-    WHERE 1=1
-  `;
-  const params2 = [];
-  if (from) { sqlTr += ` AND date(t.created_at) >= date(?)`; params2.push(from); }
-  if (to)   { sqlTr += ` AND date(t.created_at) <= date(?)`; params2.push(to); }
-  sqlTr += ` ORDER BY t.id DESC`;
-  const transfers = db.prepare(sqlTr).all(...params2);
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'KOPPA STOK';
@@ -1140,31 +1073,33 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
   const periodeStr = `${from || 'Semua'} s/d ${to || 'Semua'}`;
   const nowStr = new Date().toLocaleString('id-ID');
 
-  // ===================== SHEET 1: Riwayat Stok Office (MIOF) =====================
-  const sh1 = workbook.addWorksheet('Riwayat Stok MIOF');
-  addTitleBlock(sh1, 'RIWAYAT STOK MASUK / KELUAR — MIOF (Office)', `Periode : ${periodeStr}   |   Cetak : ${nowStr}   |   Total : ${logs.length} transaksi`, 'G');
+  // ===================== SHEET 1: Riwayat Stok (semua site) =====================
+  const sh1 = workbook.addWorksheet('Riwayat Stok');
+  addTitleBlock(sh1, 'RIWAYAT STOK MASUK / KELUAR (MIOF & MIMS)', `Periode : ${periodeStr}   |   Cetak : ${nowStr}   |   Total : ${logs.length} transaksi`, 'H');
 
   sh1.columns = [
     { key: 'waktu',    width: 22 },
-    { key: 'produk',   width: 40 },
-    { key: 'kategori', width: 18 },
+    { key: 'produk',   width: 36 },
+    { key: 'kategori', width: 16 },
+    { key: 'site',     width: 10 },
     { key: 'tipe',     width: 16 },
     { key: 'jumlah',   width: 10 },
     { key: 'catatan',  width: 30 },
     { key: 'petugas',  width: 14 },
   ];
-  styleHeaderRow(sh1.getRow(3), ['Waktu','Produk','Kategori','Tipe','Jumlah','Catatan','Petugas'], 'FF1A56DB');
+  styleHeaderRow(sh1.getRow(3), ['Waktu','Produk','Kategori','Site','Tipe','Jumlah','Catatan','Petugas'], 'FF1A56DB');
 
   logs.forEach((item, idx) => {
     const row = sh1.addRow([
       item.created_at, item.product_name, item.category_name,
+      item.site === 'mess' ? 'MIMS' : 'MIOF',
       item.type === 'in' ? 'STOK MASUK' : 'STOK KELUAR',
       item.qty, item.note || '-', item.user || '-'
     ]);
     styleDataRow(row, idx);
-    const tipeCell = row.getCell(4);
+    const tipeCell = row.getCell(5);
     tipeCell.font = { bold: true, size: 9.5, color: { argb: item.type === 'in' ? 'FF0F9B52' : 'FFE02424' } };
-    row.getCell(5).alignment = { horizontal: 'center' };
+    row.getCell(6).alignment = { horizontal: 'center' };
   });
 
   sh1.views = [{ state: 'frozen', ySplit: 3 }];
@@ -1172,44 +1107,9 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
   sh1.mergeCells(`A${lr1}:D${lr1}`);
   sh1.getCell(`A${lr1}`).value = `Total Transaksi : ${logs.length}`;
   sh1.getCell(`A${lr1}`).font = { bold: true, color: { argb: 'FF1A56DB' } };
-  sh1.getCell(`G${lr1 + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
-  sh1.getCell(`G${lr1 + 5}`).value = 'Administrator';
-  sh1.getCell(`G${lr1 + 9}`).value = '(____________________)';
-
-  // ===================== SHEET 2: Distribusi Office → Mess =====================
-  const sh2 = workbook.addWorksheet('Distribusi MIOF→MIPL');
-  addTitleBlock(sh2, 'RIWAYAT DISTRIBUSI OFFICE (MIOF) → MESS (MIPL)', `Periode : ${periodeStr}   |   Cetak : ${nowStr}   |   Total : ${transfers.length} transaksi`, 'G');
-
-  sh2.columns = [
-    { key: 'waktu',    width: 22 },
-    { key: 'produk',   width: 40 },
-    { key: 'kategori', width: 18 },
-    { key: 'arah',     width: 18 },
-    { key: 'jumlah',   width: 10 },
-    { key: 'catatan',  width: 30 },
-    { key: 'petugas',  width: 14 },
-  ];
-  styleHeaderRow(sh2.getRow(3), ['Waktu','Produk','Kategori','Arah Transfer','Jumlah','Catatan','Petugas'], 'FF0C7A40');
-
-  transfers.forEach((item, idx) => {
-    const arahLabel = item.direction === 'office_to_mess' ? 'OFFICE → MESS' : 'MESS → OFFICE';
-    const row = sh2.addRow([
-      item.created_at, item.product_name, item.category_name,
-      arahLabel, item.qty, item.note || '-', item.user || '-'
-    ]);
-    styleDataRow(row, idx);
-    row.getCell(4).font = { bold: true, size: 9.5, color: { argb: 'FF1A56DB' } };
-    row.getCell(5).alignment = { horizontal: 'center' };
-  });
-
-  sh2.views = [{ state: 'frozen', ySplit: 3 }];
-  const lr2 = sh2.lastRow.number + 2;
-  sh2.mergeCells(`A${lr2}:D${lr2}`);
-  sh2.getCell(`A${lr2}`).value = `Total Transfer : ${transfers.length}`;
-  sh2.getCell(`A${lr2}`).font = { bold: true, color: { argb: 'FF0C7A40' } };
-  sh2.getCell(`G${lr2 + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
-  sh2.getCell(`G${lr2 + 5}`).value = 'Administrator';
-  sh2.getCell(`G${lr2 + 9}`).value = '(____________________)';
+  sh1.getCell(`H${lr1 + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
+  sh1.getCell(`H${lr1 + 5}`).value = 'Administrator';
+  sh1.getCell(`H${lr1 + 9}`).value = '(____________________)';
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="Riwayat-Stok-KOPPA.xlsx"');
@@ -1223,7 +1123,7 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
   const periodeStr = `${from || 'Semua'} s/d ${to || 'Semua'}`;
   const nowStr = new Date().toLocaleString('id-ID');
 
-  let sqlLogs = `SELECT l.created_at, p.name as product_name, c.name as category_name, l.type, l.qty, l.note, l.user
+  let sqlLogs = `SELECT l.created_at, p.name as product_name, c.name as category_name, p.default_location as site, l.type, l.qty, l.note, l.user
     FROM stock_logs l JOIN products p ON p.id=l.product_id JOIN categories c ON c.id=p.category_id WHERE 1=1`;
   const p1 = [];
   if (from) { sqlLogs += ` AND date(l.created_at) >= date(?)`; p1.push(from); }
@@ -1231,14 +1131,7 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
   if (type && type !== 'all') { sqlLogs += ` AND l.type=?`; p1.push(type); }
   const logs = db.prepare(sqlLogs + ` ORDER BY l.created_at DESC`).all(...p1);
 
-  let sqlTr = `SELECT t.created_at, p.name as product_name, c.name as category_name, t.direction, t.qty, t.note, t.user
-    FROM stock_transfers t JOIN products p ON p.id=t.product_id JOIN categories c ON c.id=p.category_id WHERE 1=1`;
-  const p2 = [];
-  if (from) { sqlTr += ` AND date(t.created_at) >= date(?)`; p2.push(from); }
-  if (to)   { sqlTr += ` AND date(t.created_at) <= date(?)`; p2.push(to); }
-  const transfers = db.prepare(sqlTr + ` ORDER BY t.created_at DESC`).all(...p2);
-
-  let sqlOp = `SELECT o.created_at, p.name as product_name, c.name as category_name, o.location,
+  let sqlOp = `SELECT o.created_at, p.name as product_name, c.name as category_name, p.default_location as site,
     o.stock_fisik, o.stock_system, o.selisih, o.user, o.status
     FROM stock_opname o JOIN products p ON p.id=o.product_id JOIN categories c ON c.id=p.category_id WHERE 1=1`;
   const p3 = [];
@@ -1304,40 +1197,24 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
   sh.getRow(2).height = 18;
 
   secTitle(`📦  STOK MASUK / KELUAR   |   Total: ${logs.length} transaksi`, 'FF1A56DB');
-  styleHdr(sh.addRow(['Waktu','Produk','Kategori','Tipe','Jumlah','','Catatan','Petugas']),
-    ['Waktu','Produk','Kategori','Tipe','Jumlah','','Catatan','Petugas'], 'FF1A56DB');
+  styleHdr(sh.addRow(['Waktu','Produk','Kategori','Site','Tipe','Jumlah','Catatan','Petugas']),
+    ['Waktu','Produk','Kategori','Site','Tipe','Jumlah','Catatan','Petugas'], 'FF1A56DB');
   if (logs.length === 0) {
     const r = sh.addRow(['Tidak ada data']); sh.mergeCells(`A${r.number}:H${r.number}`);
     r.getCell(1).alignment={horizontal:'center'}; r.getCell(1).font={italic:true,color:{argb:'FF94A3B8'}};
   } else {
     logs.forEach((item, idx) => {
       const row = sh.addRow([item.created_at, item.product_name, item.category_name,
-        item.type==='in'?'STOK MASUK':'STOK KELUAR', item.qty, '', item.note||'-', item.user||'-']);
+        item.site==='mess'?'MIMS':'MIOF', item.type==='in'?'STOK MASUK':'STOK KELUAR', item.qty, item.note||'-', item.user||'-']);
       styleDat(row, idx, 8);
-      row.getCell(4).font={bold:true,size:9.5,color:{argb:item.type==='in'?'FF0F9B52':'FFE02424'}};
-      row.getCell(5).alignment={horizontal:'center'};
-    });
-  }
-
-  secTitle(`🔄  DISTRIBUSI OFFICE → MESS   |   Total: ${transfers.length} transaksi`, 'FF0C7A40');
-  styleHdr(sh.addRow(['Waktu','Produk','Kategori','Arah','Jumlah','','Catatan','Petugas']),
-    ['Waktu','Produk','Kategori','Arah','Jumlah','','Catatan','Petugas'], 'FF0C7A40');
-  if (transfers.length === 0) {
-    const r = sh.addRow(['Tidak ada data']); sh.mergeCells(`A${r.number}:H${r.number}`);
-    r.getCell(1).alignment={horizontal:'center'}; r.getCell(1).font={italic:true,color:{argb:'FF94A3B8'}};
-  } else {
-    transfers.forEach((item, idx) => {
-      const row = sh.addRow([item.created_at, item.product_name, item.category_name,
-        'OFFICE → MESS', item.qty, '', item.note||'-', item.user||'-']);
-      styleDat(row, idx, 8);
-      row.getCell(4).font={bold:true,size:9.5,color:{argb:'FF0C7A40'}};
-      row.getCell(5).alignment={horizontal:'center'};
+      row.getCell(5).font={bold:true,size:9.5,color:{argb:item.type==='in'?'FF0F9B52':'FFE02424'}};
+      row.getCell(6).alignment={horizontal:'center'};
     });
   }
 
   secTitle(`📋  STOCK OPNAME   |   Total: ${opnames.length} data`, 'FF7C3AED');
-  styleHdr(sh.addRow(['Waktu','Produk','Kategori','Lokasi','Qty Fisik','Stok Sistem','Selisih','Status']),
-    ['Waktu','Produk','Kategori','Lokasi','Qty Fisik','Stok Sistem','Selisih','Status'], 'FF7C3AED');
+  styleHdr(sh.addRow(['Waktu','Produk','Kategori','Site','Qty Fisik','Stok Sistem','Selisih','Status']),
+    ['Waktu','Produk','Kategori','Site','Qty Fisik','Stok Sistem','Selisih','Status'], 'FF7C3AED');
   if (opnames.length === 0) {
     const r = sh.addRow(['Tidak ada data']); sh.mergeCells(`A${r.number}:H${r.number}`);
     r.getCell(1).alignment={horizontal:'center'}; r.getCell(1).font={italic:true,color:{argb:'FF94A3B8'}};
@@ -1346,9 +1223,10 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
       const selisih = item.selisih || (item.stock_fisik - item.stock_system);
       const stLabel = item.status==='approved'?'APPROVED':item.status==='rejected'?'DITOLAK':'PENDING';
       const row = sh.addRow([item.created_at, item.product_name, item.category_name,
-        item.location==='warehouse'?'Office':'Mess', item.stock_fisik, item.stock_system, selisih, stLabel]);
+        item.site==='mess'?'MIMS':'MIOF',
+        item.stock_fisik, item.stock_system, selisih, stLabel]);
       styleDat(row, idx, 8);
-      [4,5,6,7].forEach(c => row.getCell(c).alignment={horizontal:'center'});
+      [5,6,7].forEach(c => row.getCell(c).alignment={horizontal:'center'});
       if (selisih!==0) row.getCell(7).font={bold:true,size:9.5,color:{argb:selisih<0?'FFE02424':'FF0F9B52'}};
       row.getCell(8).font={bold:true,size:9.5,color:{argb:item.status==='approved'?'FF0F9B52':item.status==='rejected'?'FFE02424':'FFD97706'}};
     });
@@ -1378,7 +1256,7 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
   const { from, to, type } = req.query;
 
   let sql = `
-    SELECT l.created_at, p.name as product_name, c.name as category_name, l.type, l.qty, l.note, l.user
+    SELECT l.created_at, p.name as product_name, c.name as category_name, p.default_location as site, l.type, l.qty, l.note, l.user
     FROM stock_logs l
     JOIN products p ON p.id=l.product_id
     JOIN categories c ON c.id=p.category_id
@@ -1393,8 +1271,7 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
 
   // Current stock
   const stocks = db.prepare(`
-    SELECT p.name, c.name as cat, p.warehouse_stock, p.display_stock,
-           (p.warehouse_stock+p.display_stock) as total,
+    SELECT p.name, c.name as cat, p.default_location as site, p.warehouse_stock,
            p.warehouse_min, p.price
     FROM products p JOIN categories c ON c.id=p.category_id ORDER BY p.name
   `).all();
@@ -1479,7 +1356,7 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
     doc.fillColor(MID_BLUE).font('Helvetica-Bold').fontSize(8.5)
        .text(`Total Transaksi : ${logs.length}`, PAGE_W - MR - 140, curY + 6, { width: 136, align: 'right' });
     doc.fillColor(GRAY_TEXT).font('Helvetica').fontSize(8)
-       .text('Riwayat Stok Office (MIOF)', PAGE_W - MR - 140, curY + 18, { width: 136, align: 'right' });
+       .text('Riwayat Stok Gudang (MIOF & MIMS)', PAGE_W - MR - 140, curY + 18, { width: 136, align: 'right' });
 
     curY += 42;
   }
@@ -1527,17 +1404,18 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
     curY += rowH;
   }
 
-  // ── SECTION 1: Riwayat Stok Office ────────────────────────
-  sectionTitle('📦  RIWAYAT STOK MASUK / KELUAR  —  MIOF (Office/Gudang)');
+  // ── SECTION 1: Riwayat Stok Gudang (semua site) ────────────
+  sectionTitle('📦  RIWAYAT STOK MASUK / KELUAR  —  GUDANG (MIOF & MIMS)');
 
   const logsColDef = [
-    { label: 'WAKTU',    x:  0,   w: 108, align: 'left' },
-    { label: 'PRODUK',   x: 110,  w: 175, align: 'left' },
-    { label: 'KATEGORI', x: 287,  w: 72,  align: 'left' },
-    { label: 'TIPE',     x: 361,  w: 58,  align: 'center' },
-    { label: 'QTY',      x: 421,  w: 28,  align: 'center' },
-    { label: 'CATATAN',  x: 451,  w: 60,  align: 'left' },
-    { label: 'PETUGAS',  x: 513,  w: 46,  align: 'left' },
+    { label: 'WAKTU',    x:  0,   w: 98,  align: 'left' },
+    { label: 'PRODUK',   x: 100,  w: 155, align: 'left' },
+    { label: 'KATEGORI', x: 257,  w: 62,  align: 'left' },
+    { label: 'SITE',     x: 321,  w: 34,  align: 'center' },
+    { label: 'TIPE',     x: 357,  w: 52,  align: 'center' },
+    { label: 'QTY',      x: 411,  w: 28,  align: 'center' },
+    { label: 'CATATAN',  x: 441,  w: 58,  align: 'left' },
+    { label: 'PETUGAS',  x: 501,  w: 46,  align: 'left' },
   ];
 
   tableHeader(logsColDef);
@@ -1553,12 +1431,13 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
         ? { text: 'MASUK',  _color: GREEN }
         : { text: 'KELUAR', _color: RED };
       tableRow(logsColDef, [
-        truncate(item.created_at, 20),
-        truncate(item.product_name, 34),
-        truncate(item.category_name, 14),
+        truncate(item.created_at, 18),
+        truncate(item.product_name, 28),
+        truncate(item.category_name, 12),
+        item.site === 'mess' ? 'MIMS' : 'MIOF',
         tipeVal,
         item.qty,
-        truncate(item.note, 12),
+        truncate(item.note, 10),
         truncate(item.user, 10),
       ], idx, 16);
     });
@@ -1579,28 +1458,26 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
   const stColDef = [
     { label: 'PRODUK',    x:   0, w: 175, align: 'left' },
     { label: 'KATEGORI',  x: 177, w: 72,  align: 'left' },
-    { label: 'MIOF',      x: 251, w: 36,  align: 'center' },
-    { label: 'MIPL',      x: 289, w: 36,  align: 'center' },
-    { label: 'TOTAL',     x: 327, w: 36,  align: 'center' },
-    { label: 'MIN',       x: 365, w: 30,  align: 'center' },
-    { label: 'HARGA',     x: 397, w: 58,  align: 'right' },
-    { label: 'STATUS',    x: 457, w: 62,  align: 'center' },
+    { label: 'SITE',      x: 251, w: 36,  align: 'center' },
+    { label: 'STOK',      x: 289, w: 36,  align: 'center' },
+    { label: 'MIN',       x: 327, w: 36,  align: 'center' },
+    { label: 'HARGA',     x: 365, w: 62,  align: 'right' },
+    { label: 'STATUS',    x: 429, w: 90,  align: 'center' },
   ];
 
   tableHeader(stColDef);
 
   stocks.forEach((p, idx) => {
-    const isLow = (p.warehouse_stock + p.display_stock) <= p.warehouse_min;
+    const isLow = p.warehouse_stock <= p.warehouse_min;
     const statusVal = isLow
       ? { text: 'PERLU ORDER', _color: RED }
       : { text: 'OK', _color: GREEN };
     const hargaStr = 'Rp' + p.price.toLocaleString('id-ID');
     tableRow(stColDef, [
-      truncate(p.name, 34),
+      truncate(p.name, 32),
       truncate(p.cat, 14),
+      p.site === 'mess' ? 'MIMS' : 'MIOF',
       p.warehouse_stock,
-      p.display_stock,
-      p.total,
       p.warehouse_min,
       hargaStr,
       statusVal,
@@ -1631,67 +1508,6 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
 });
 
 app.post(
-  '/api/import-opname',
-  authMiddleware,
-  upload.single('file'),
-  async (req, res) => {
-
-    if (!req.file) {
-      return res.status(400).json({
-        error: 'File Excel belum dipilih'
-      });
-    }
-
-    const workbook = new ExcelJS.Workbook();
-
-    await workbook.xlsx.readFile(req.file.path);
-
-    const sheet = workbook.getWorksheet(1);
-
-    let berhasil = 0;
-    let gagal = [];
-
-    sheet.eachRow((row, rowNumber) => {
-
-      if (rowNumber === 1) return;
-
-      const barcode = String(row.getCell(1).value || '').trim();
-      const stokOffice = Number(row.getCell(3).value || 0);
-      const stokMess = Number(row.getCell(4).value || 0);
-
-      if (!barcode) return;
-
-      const product = db.prepare(
-        'SELECT * FROM products WHERE barcode=?'
-      ).get(barcode);
-
-      if (!product) {
-        gagal.push(barcode);
-        return;
-      }
-
-      db.prepare(`
-        UPDATE products
-        SET warehouse_stock=?,
-            display_stock=?
-        WHERE id=?
-      `).run(
-        stokOffice,
-        stokMess,
-        product.id
-      );
-
-      berhasil++;
-    });
-
-    res.json({
-      ok: true,
-      berhasil,
-      gagal
-    });
-});
-
-app.post(
   '/api/products/import',
   authMiddleware,
   adminOnly,
@@ -1709,9 +1525,12 @@ app.post(
 
       function safeNum(val, def = 0) {
         if (val === null || val === undefined) return def;
-        // ExcelJS bisa return object {text, result} untuk formula cell
+        // ExcelJS bisa return object {text, result} untuk formula cell,
+        // atau {error: '#N/A'} / {error: '#REF!'} dst untuk sel yang error —
+        // keduanya HARUS jatuh ke default, jangan sampai kebaca sebagai 0.
         if (typeof val === 'object' && val !== null) {
-          val = val.result !== undefined ? val.result : (val.text || val.value || 0);
+          if (val.error !== undefined) return def;
+          val = val.result !== undefined ? val.result : (val.text !== undefined ? val.text : def);
         }
         const s = String(val).trim();
         if (s === '' || s.startsWith('#')) return def;
@@ -1722,10 +1541,41 @@ app.post(
       function safeStr(val) {
         if (val === null || val === undefined) return '';
         if (typeof val === 'object' && val !== null) {
+          if (val.error !== undefined) return '';
           val = val.result !== undefined ? val.result : (val.text || val.richText?.[0]?.text || '');
         }
         return String(val).trim();
       }
+
+      // TAHAP 0: baca baris header (baris 1) untuk deteksi posisi kolom
+      // berdasarkan NAMA kolom, bukan posisi tetap — karena template
+      // MIOF/Office dan MIMS/Mess punya urutan kolom yang beda (template
+      // Mess tidak punya kolom "Unit of Measure").
+      // Kolom yang dikenali: Lokasi, Barcode, Nama Produk, Kategori Produk,
+      // Jumlah/Quantity, Satuan/Unit, Harga/Price, Min, Max.
+      const headerRow = sheet.getRow(1);
+      const colMap = {}; // { location, barcode, name, category, qty, unit, price, min, max } -> nomor kolom
+      headerRow.eachCell((cell, colNum) => {
+        const h = safeStr(cell.value).toLowerCase();
+        if (!h) return;
+        if (h.includes('location') || h.includes('lokasi')) colMap.location = colNum;
+        else if (h.includes('barcode')) colMap.barcode = colNum;
+        else if (h.includes('categ') || h.includes('kategori')) colMap.category = colNum;
+        else if (h.includes('quantity') || h === 'qty' || h.includes('jumlah')) colMap.qty = colNum;
+        else if (h.includes('unit') || h.includes('satuan')) colMap.unit = colNum;
+        else if (h.includes('price') || h.includes('harga')) colMap.price = colNum;
+        else if (h === 'min' || h.includes('minimal') || h.includes('min stok') || h.includes('min. stok')) colMap.min = colNum;
+        else if (h === 'max' || h.includes('maksimal') || h.includes('max stok') || h.includes('max. stok')) colMap.max = colNum;
+        else if (h === 'product' || h.includes('nama produk') || h.includes('product name')) colMap.name = colNum;
+      });
+
+      // Fallback ke posisi kolom standar (urutan template lama) kalau ada
+      // header yang tidak berhasil dikenali dari namanya. Kolom "unit"
+      // SENGAJA tidak difallback ke posisi tetap — kalau memang tidak ada
+      // kolom Satuan/Unit di template (mis. template Mess), biarkan kosong
+      // supaya tidak nabrak kolom lain (mis. Harga), lalu default ke "PCS".
+      const fallback = { location: 1, barcode: 2, name: 3, category: 4, qty: 5, price: 7, min: 8, max: 9 };
+      for (const key in fallback) if (!colMap[key]) colMap[key] = fallback[key];
 
       // TAHAP 1: baca semua baris
       // Key = barcode + '|' + lokasi → beda lokasi = produk terpisah, sama lokasi+barcode = duplikat
@@ -1735,15 +1585,18 @@ app.post(
       sheet.eachRow((row, rowNum) => {
         if (rowNum === 1) return;
 
-        const locationRaw  = safeStr(row.getCell(1).value);
-        const barcode      = safeStr(row.getCell(2).value);
-        const productText  = safeStr(row.getCell(3).value);
-        const categoryName = (safeStr(row.getCell(4).value) || 'LAINNYA').toUpperCase();
-        const qty          = safeNum(row.getCell(5).value, 0);
-        const unit         = safeStr(row.getCell(6).value) || 'PCS';
-        const price        = safeNum(row.getCell(7).value, 0);
-        const minQty       = safeNum(row.getCell(8).value, 0);
-        const maxQty       = safeNum(row.getCell(9).value, 0);
+        const locationRaw  = safeStr(row.getCell(colMap.location).value);
+        const barcode      = safeStr(row.getCell(colMap.barcode).value);
+        const productText  = safeStr(row.getCell(colMap.name).value);
+        const categoryName = (safeStr(row.getCell(colMap.category).value) || 'LAINNYA').toUpperCase();
+        const qty          = safeNum(row.getCell(colMap.qty).value, 0);
+        // Kolom Satuan/Unit boleh tidak ada di template (mis. template Mess) → default PCS
+        const unit         = colMap.unit ? (safeStr(row.getCell(colMap.unit).value) || 'PCS') : 'PCS';
+        const price        = safeNum(row.getCell(colMap.price).value, 0);
+        // Standar Min/Max perusahaan = 48 / 1000. Kalau selnya kosong atau
+        // error (mis. "#N/A"), jangan sampai kebaca 0 — pakai standar ini.
+        const minQty       = safeNum(row.getCell(colMap.min).value, 48);
+        const maxQty       = safeNum(row.getCell(colMap.max).value, 1000);
 
         if (!barcode && !productText) { dilewati++; return; }
         if (!barcode) { gagal.push({ rowNum, info: productText, error: 'Barcode kosong' }); return; }
@@ -1754,8 +1607,19 @@ app.post(
         if (m) { sku = m[1].trim(); name = m[2].trim(); }
 
         const locUp = locationRaw.toUpperCase();
-        const isMess = locUp.includes('MIPS') || locUp.includes('MIPL') || locUp.includes('MESS') || locUp.includes('DISPLAY');
+        const isMess = locUp.includes('MIMS') || locUp.includes('MIPL') || locUp.includes('MESS') || locUp.includes('DISPLAY');
         const locKey = isMess ? 'mess' : 'office';
+
+        // Kolom Satuan/Unit boleh tidak ada di template (mis. template Mess).
+        // Kalau kosong, coba warisi satuan dari produk yang sama (barcode sama)
+        // di site MIOF/Office yang sudah ada di database, sebelum default ke PCS.
+        let finalUnit = unit;
+        if (!colMap.unit || !unit) {
+          const officeMatch = barcode
+            ? db.prepare('SELECT unit FROM products WHERE barcode=? AND default_location=?').get(barcode, 'office')
+            : null;
+          finalUnit = (officeMatch && officeMatch.unit) ? officeMatch.unit : 'PCS';
+        }
 
         // Key unik = barcode + lokasi → beda lokasi = produk terpisah
         const mapKey = barcode + '|' + locKey;
@@ -1763,19 +1627,22 @@ app.post(
         if (productMap.has(mapKey)) {
           // Barcode + lokasi sama → baris duplikat di Excel, gabung qty saja
           const e = productMap.get(mapKey);
-          if (isMess) e.display_stock += qty;
-          else        e.warehouse_stock += qty;
+          e.qty += qty;
           duplikat++;
           return;
         }
 
         productMap.set(mapKey, {
-          barcode, name, sku, categoryName, unit, price, minQty, maxQty,
-          locKey,
-          warehouse_stock: isMess ? 0 : qty,
-          display_stock:   isMess ? qty : 0,
+          barcode, name, sku, categoryName, unit: finalUnit, price, minQty, maxQty,
+          locKey, qty,
         });
       });
+
+      // Kategori yang boleh otomatis dibuat dari import. Kategori lain di luar
+      // daftar ini (mis. "SEMBAKO" di template lama) akan dipetakan ke "LAINNYA"
+      // supaya daftar kategori tidak membengkak sendiri — kalau memang mau
+      // menambah kategori baru, tambahkan manual lewat menu Kategori.
+      const ALLOWED_CATEGORIES = ['MAKANAN', 'MINUMAN', 'ROKOK', 'LAINNYA'];
 
       // TAHAP 2: upsert ke DB
       // Barcode + lokasi sama → update; barcode sama tapi lokasi beda → insert baru
@@ -1786,9 +1653,14 @@ app.post(
           try {
             let cat = db.prepare('SELECT id FROM categories WHERE UPPER(name)=?').get(p.categoryName);
             if (!cat) {
-              const display = p.categoryName.charAt(0) + p.categoryName.slice(1).toLowerCase();
-              db.prepare('INSERT INTO categories (name) VALUES (?)').run(display);
-              cat = db.prepare('SELECT id FROM categories WHERE UPPER(name)=?').get(p.categoryName);
+              if (ALLOWED_CATEGORIES.includes(p.categoryName)) {
+                const display = p.categoryName.charAt(0) + p.categoryName.slice(1).toLowerCase();
+                db.prepare('INSERT INTO categories (name) VALUES (?)').run(display);
+                cat = db.prepare('SELECT id FROM categories WHERE UPPER(name)=?').get(p.categoryName);
+              } else {
+                // Kategori tidak dikenal → masukkan ke "Lainnya", jangan bikin kategori baru
+                cat = db.prepare('SELECT id FROM categories WHERE UPPER(name)=?').get('LAINNYA');
+              }
             }
 
             // Cari di DB: harus cocok BARCODE + LOKASI keduanya
@@ -1801,15 +1673,14 @@ app.post(
               db.prepare(`
                 UPDATE products
                 SET name=?, sku=?, category_id=?, price=?, unit=?,
-                    warehouse_stock=?, display_stock=?,
+                    warehouse_stock=?,
                     warehouse_min=?, warehouse_max=?,
-                    display_min=?, display_max=?,
                     default_location=?
                 WHERE id=?
               `).run(
                 p.name, p.sku, cat.id, p.price, p.unit,
-                p.warehouse_stock, p.display_stock,
-                p.minQty, p.maxQty, p.minQty, p.maxQty,
+                p.qty,
+                p.minQty, p.maxQty,
                 p.locKey,
                 existing.id
               );
@@ -1818,14 +1689,14 @@ app.post(
               db.prepare(`
                 INSERT INTO products
                   (name, category_id, sku, barcode, price, unit,
-                   warehouse_stock, display_stock, default_location,
-                   warehouse_min, warehouse_max, display_min, display_max)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                   warehouse_stock, default_location,
+                   warehouse_min, warehouse_max)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
               `).run(
                 p.name, cat.id, p.sku, p.barcode, p.price, p.unit,
-                p.warehouse_stock, p.display_stock,
+                p.qty,
                 p.locKey,
-                p.minQty, p.maxQty, p.minQty, p.maxQty
+                p.minQty, p.maxQty
               );
             }
             berhasil++;
