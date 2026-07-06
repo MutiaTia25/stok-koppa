@@ -92,14 +92,23 @@ function enterApp(){
 
 // ===== SIDEBAR =====
 function buildSidebar(){
+  const ICONS = {
+    dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>',
+    products: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
+    stock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+    opname: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-4"/><path d="m9 14 2 2 4-4"/></svg>',
+    reports: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h6"/></svg>',
+    categories: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
+    users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  };
   const menu = [
-    { id:'dashboard', label:'Dashboard', icon:'📊', roles:['admin','kasir'] },
-    { id:'products', label:'Data Produk', icon:'📦', roles:['admin','kasir'] },
-    { id:'stock', label:'Stok Masuk/Keluar', icon:'🔁', roles:['admin','kasir'] },
-    { id:'opname', label:'Stock Opname', icon:'📋', roles:['admin','kasir'] },
-    { id:'reports', label:'Laporan', icon:'📑', roles:['admin'] },
-    { id:'categories', label:'Kelola Kategori', icon:'🏷️', roles:['admin'] },
-    { id:'users', label:'Manajemen Pengguna', icon:'👤', roles:['admin'] },
+    { id:'dashboard', label:'Dashboard', icon:ICONS.dashboard, roles:['admin','kasir'] },
+    { id:'products', label:'Data Produk', icon:ICONS.products, roles:['admin','kasir'] },
+    { id:'stock', label:'Stok Masuk/Keluar', icon:ICONS.stock, roles:['admin','kasir'] },
+    { id:'opname', label:'Stock Opname', icon:ICONS.opname, roles:['admin','kasir'] },
+    { id:'reports', label:'Laporan', icon:ICONS.reports, roles:['admin'] },
+    { id:'categories', label:'Kelola Kategori', icon:ICONS.categories, roles:['admin'] },
+    { id:'users', label:'Manajemen Pengguna', icon:ICONS.users, roles:['admin'] },
   ];
   const sidebar = document.getElementById('sidebarMenu');
   sidebar.innerHTML = '';
@@ -180,6 +189,15 @@ function stopOpnamePolling(){
 }
 
 // ===== DASHBOARD =====
+const DASH_ICONS = {
+  box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
+  layers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
+  coin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5c0-1 1-1.5 3-1.5s3 .7 3 1.7-1 1.3-3 1.8-3 .8-3 1.8 1 1.7 3 1.7 3-.5 3-1.5"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  arrowUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
+  arrowDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>',
+};
+
 async function loadDashboard(){
   const isAdmin = currentUser.role === 'admin';
 
@@ -188,17 +206,16 @@ async function loadDashboard(){
     const sum = await api('/summary');
     document.getElementById('dashCards').innerHTML = `
       <div class="card" style="grid-column:1/-1; background:linear-gradient(135deg,#0c2d6b 0%,#1a56db 60%,#3b7ef8 100%); color:#fff; border:none; box-shadow:0 6px 20px rgba(26,86,219,.3);">
-        <div style="font-size:28px; margin-bottom:6px;">👋</div>
         <div style="font-size:18px; font-weight:800; letter-spacing:-.2px;">Selamat datang, ${currentUser.full_name || currentUser.username}!</div>
         <div style="font-size:13px; opacity:.8; margin-top:3px; font-weight:500;">Kasir · KOPPA STOK</div>
       </div>
       <div class="card">
-        <div class="icon-box icon-blue">📦</div>
+        <div class="icon-box icon-blue">${DASH_ICONS.box}</div>
         <div class="num">${sum.totalProducts}</div>
         <div class="label">Total Produk</div>
       </div>
       <div class="card">
-        <div class="icon-box icon-green">📈</div>
+        <div class="icon-box icon-green">${DASH_ICONS.layers}</div>
         <div class="num">${sum.totalStock}</div>
         <div class="label">Total Unit Stok</div>
       </div>
@@ -233,32 +250,32 @@ async function loadDashboard(){
   const cardsEl = document.getElementById('dashCards');
   cardsEl.innerHTML = `
     <div class="card">
-      <div class="icon-box icon-blue">📦</div>
+      <div class="icon-box icon-blue">${DASH_ICONS.box}</div>
       <div class="num">${sum.totalProducts}</div>
       <div class="label">Total Produk</div>
     </div>
     <div class="card">
-      <div class="icon-box icon-green">📈</div>
+      <div class="icon-box icon-green">${DASH_ICONS.layers}</div>
       <div class="num">${sum.totalStock}</div>
       <div class="label">Total Unit Stok (Office+Mess)</div>
     </div>
     <div class="card">
-      <div class="icon-box icon-orange">💰</div>
+      <div class="icon-box icon-orange">${DASH_ICONS.coin}</div>
       <div class="num">${formatRupiah(sum.totalValue)}</div>
       <div class="label">Nilai Total Stok</div>
     </div>
     <div class="card">
-      <div class="icon-box icon-red">⚠️</div>
+      <div class="icon-box icon-red">${DASH_ICONS.alert}</div>
       <div class="num" style="color:${sum.lowStockItems.length>0?'#dc2626':'#1e293b'}">${sum.lowStockItems.length}</div>
       <div class="label">Produk Perlu Perhatian</div>
     </div>
     <div class="card">
-      <div class="icon-box icon-green">⬆️</div>
+      <div class="icon-box icon-green">${DASH_ICONS.arrowUp}</div>
       <div class="num">${sum.todayIn}</div>
       <div class="label">Stok Masuk Hari Ini</div>
     </div>
     <div class="card">
-      <div class="icon-box icon-red">⬇️</div>
+      <div class="icon-box icon-red">${DASH_ICONS.arrowDown}</div>
       <div class="num">${sum.todayOut}</div>
       <div class="label">Stok Keluar Hari Ini</div>
     </div>
@@ -290,7 +307,7 @@ async function loadDashboard(){
       <td>${saran !== '-' ? `<span style="color:#dc2626; font-weight:600; font-size:12px;">${saran}</span>` : '-'}</td>
     </tr>
   `;
-  }).join('') || '<tr><td colspan="3" class="empty">✅ Semua stok aman</td></tr>';
+  }).join('') || '<tr><td colspan="3" class="empty">Semua stok aman</td></tr>';
 }
 
 // ===== CATEGORIES =====
@@ -571,9 +588,9 @@ async function importExcel(file){
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
 
-    let msg = `✅ ${data.berhasil} produk unik berhasil diimport`;
+    let msg = `${data.berhasil} produk unik berhasil diimport`;
     if (data.dilewati > 0) msg += ` · ${data.dilewati} baris kosong dilewati`;
-    if (data.gagal > 0)    msg += ` · ⚠️ ${data.gagal} gagal`;
+    if (data.gagal > 0)    msg += ` · ${data.gagal} gagal`;
     // Tampilkan info duplikat supaya user tidak bingung hitungan berbeda dengan Excel
     if (data.info) console.info('[Import]', data.info);
     toast(msg, data.gagal > 0 ? 'warn' : 'success');
@@ -584,7 +601,7 @@ async function importExcel(file){
     }
     // Catatan: jumlah produk bisa lebih sedikit dari baris Excel karena barcode duplikat digabung
     if (data.berhasil > 0) {
-      setTimeout(() => toast(`ℹ️ Barcode duplikat di Excel digabung otomatis (normal)`, 'success'), 3000);
+      setTimeout(() => toast(`ℹBarcode duplikat di Excel digabung otomatis (normal)`, 'success'), 3000);
     }
     loadProducts();
     loadCategories();
@@ -707,7 +724,7 @@ function showStockSearch(query){
 
   if (results.length === 0) {
     drop.style.display = 'block';
-    drop.innerHTML = `<div style="padding:14px; color:#94a3b8; font-size:13px;">❌ Produk tidak ditemukan untuk "<b>${query}</b>"</div>`;
+    drop.innerHTML = `<div style="padding:14px; color:#94a3b8; font-size:13px;">Produk tidak ditemukan untuk "<b>${query}</b>"</div>`;
     return;
   }
 
@@ -775,7 +792,7 @@ function renderStockForm(product){
   const _isAdminStock = currentUser.role === 'admin';
   formEl.innerHTML = `
     <div style="margin-top:12px; padding:14px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
-      <div style="font-weight:700; font-size:15px; color:#1e293b; margin-bottom:4px;">📦 ${product.name} <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; background:${product.location==='mess'?'#dcfce7':'#dbeafe'}; color:${product.location==='mess'?'#15803d':'#1d4ed8'};">${product.location==='mess'?'MIMS/Mess':'MIOF/Office'}</span></div>
+      <div style="font-weight:700; font-size:15px; color:#1e293b; margin-bottom:4px;">${product.name} <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; background:${product.location==='mess'?'#dcfce7':'#dbeafe'}; color:${product.location==='mess'?'#15803d':'#1d4ed8'};">${product.location==='mess'?'MIMS/Mess':'MIOF/Office'}</span></div>
       <div style="font-size:12px; color:#64748b; margin-bottom:12px;">
         Barcode: ${product.barcode || '-'} &nbsp;|&nbsp; SKU: ${product.sku || '-'} &nbsp;|&nbsp; Satuan: ${product.unit || 'PCS'}
       </div>
@@ -803,9 +820,9 @@ function renderStockForm(product){
         </div>
       </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button id="btnSubmitStock" class="btn btn-green" onclick="submitStock('in')" style="flex:1; min-width:140px;">⬆️ Barang Masuk</button>
-        ${_isAdminStock ? `<button class="btn btn-red" onclick="submitStock('out')" style="flex:1; min-width:140px;">⬇️ Barang Keluar</button>` : ``}
-        <button class="btn btn-gray" onclick="resetStockForm()" style="min-width:80px;">✕ Ganti</button>
+        <button id="btnSubmitStock" class="btn btn-green" onclick="submitStock('in')" style="flex:1; min-width:140px;">Barang Masuk</button>
+        ${_isAdminStock ? `<button class="btn btn-red" onclick="submitStock('out')" style="flex:1; min-width:140px;">Barang Keluar</button>` : ``}
+        <button class="btn btn-gray" onclick="resetStockForm()" style="min-width:80px;">Ganti</button>
       </div>
     </div>
   `;
@@ -1132,7 +1149,7 @@ function showOpnameDropdown(query){
 
   if (results.length === 0) {
     drop.style.display = 'block';
-    drop.innerHTML = `<div style="padding:14px 16px; color:#94a3b8; font-size:13px;">❌ Produk tidak ditemukan untuk "<b>${query}</b>"</div>`;
+    drop.innerHTML = `<div style="padding:14px 16px; color:#94a3b8; font-size:13px;">Produk tidak ditemukan untuk "<b>${query}</b>"</div>`;
     return;
   }
 
@@ -1145,7 +1162,7 @@ function showOpnameDropdown(query){
       <div>
         <div style="font-weight:600; font-size:13px; color:#1e293b;">${p.name} <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; background:${p.location==='mess'?'#dcfce7':'#dbeafe'}; color:${p.location==='mess'?'#15803d':'#1d4ed8'};">${p.location==='mess'?'MIMS/Mess':'MIOF/Office'}</span></div>
         <div style="font-size:11px; color:#94a3b8; margin-top:2px;">
-          📦 Barcode: ${p.barcode || '-'} &nbsp;|&nbsp; SKU: ${p.sku || '-'}
+          Barcode: ${p.barcode || '-'} &nbsp;|&nbsp; SKU: ${p.sku || '-'}
         </div>
       </div>
       <div style="font-size:12px; color:#64748b; text-align:right; white-space:nowrap; margin-left:12px;">
@@ -1194,7 +1211,7 @@ function renderOpnameForm(product){
   formEl.innerHTML = `
     <div style="margin-top:14px; padding:14px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
       <!-- Nama produk -->
-      <div style="font-weight:700; font-size:15px; color:#1e293b; margin-bottom:4px;">📦 ${product.name} <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; background:${product.location==='mess'?'#dcfce7':'#dbeafe'}; color:${product.location==='mess'?'#15803d':'#1d4ed8'};">${product.location==='mess'?'MIMS/Mess':'MIOF/Office'}</span></div>
+      <div style="font-weight:700; font-size:15px; color:#1e293b; margin-bottom:4px;">${product.name} <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; background:${product.location==='mess'?'#dcfce7':'#dbeafe'}; color:${product.location==='mess'?'#15803d':'#1d4ed8'};">${product.location==='mess'?'MIMS/Mess':'MIOF/Office'}</span></div>
       <div style="font-size:12px; color:#64748b; margin-bottom:10px;">
         Barcode: ${product.barcode || '-'} &nbsp;|&nbsp; SKU: ${product.sku || '-'} &nbsp;|&nbsp; Kategori: ${product.category_name || '-'}
       </div>
@@ -1228,12 +1245,12 @@ function renderOpnameForm(product){
 
       <!-- Tombol -->
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button id="btnSubmitOpname" class="btn btn-primary" onclick="submitOpname()" style="flex:1; min-width:140px;">✅ Simpan Opname</button>
-        <button class="btn btn-gray" onclick="resetOpnameForm()" style="min-width:100px;">✕ Ganti Produk</button>
+        <button id="btnSubmitOpname" class="btn btn-primary" onclick="submitOpname()" style="flex:1; min-width:140px;">Simpan Opname</button>
+        <button class="btn btn-gray" onclick="resetOpnameForm()" style="min-width:100px;">Ganti Produk</button>
       </div>
 
       ${!isAdmin ? `<div style="margin-top:10px; padding:8px 12px; background:#eff6ff; border-radius:8px; font-size:12px; color:#1d4ed8;">
-        ℹ️ Data dikirim ke admin untuk disetujui sebelum stok diperbarui.
+        ℹData dikirim ke admin untuk disetujui sebelum stok diperbarui.
       </div>` : ''}
     </div>
   `;
@@ -1249,9 +1266,9 @@ function onQtyChange(){
   if (!preview) return;
   if (isNaN(fisik)) { preview.innerHTML = ''; return; }
   const selisih = fisik - sysStok;
-  if (selisih === 0) preview.innerHTML = '✅ Stok sesuai, tidak ada selisih.';
-  else if (selisih > 0) preview.innerHTML = `⚠️ Stok fisik lebih banyak <b style="color:#16a34a">+${selisih}</b> dari sistem.`;
-  else preview.innerHTML = `⚠️ Stok fisik lebih sedikit <b style="color:#dc2626">${selisih}</b> dari sistem.`;
+  if (selisih === 0) preview.innerHTML = 'Stok sesuai, tidak ada selisih.';
+  else if (selisih > 0) preview.innerHTML = `Stok fisik lebih banyak <b style="color:#16a34a">+${selisih}</b> dari sistem.`;
+  else preview.innerHTML = `Stok fisik lebih sedikit <b style="color:#dc2626">${selisih}</b> dari sistem.`;
 }
 
 // Filter cache produk opname sesuai lokasi yang dipilih (MIOF/Office atau MIMS/Mess)
@@ -1302,11 +1319,11 @@ async function submitOpname() {
     if (currentUser.role === 'admin') {
       // Admin boleh lihat selisih karena mereka yang menyetujui/mengelola stok
       const selisih = result?.selisih ?? 0;
-      if (selisih === 0) toast('✅ Opname disimpan, stok sesuai!', 'success');
-      else toast(`✅ Opname disimpan. Selisih: ${selisih > 0 ? '+' : ''}${selisih}`, 'success');
+      if (selisih === 0) toast('Opname disimpan, stok sesuai!', 'success');
+      else toast(`Opname disimpan. Selisih: ${selisih > 0 ? '+' : ''}${selisih}`, 'success');
     } else {
       // Kasir tidak boleh lihat info selisih sama sekali — cukup konfirmasi terkirim
-      toast('✅ Data opname terkirim, menunggu persetujuan admin', 'success');
+      toast('Data opname terkirim, menunggu persetujuan admin', 'success');
     }
 
     // Reset form siap scan produk berikutnya
@@ -1315,7 +1332,7 @@ async function submitOpname() {
     else loadOpnameKasirHistory();
   } catch (err) {
     toast(err.message || 'Gagal menyimpan opname', 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '✅ Simpan Opname'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Simpan Opname'; }
   }
 }
 
@@ -1335,7 +1352,7 @@ async function loadOpnameHistory(){
   const countLabel = document.getElementById('opnamePendingCount');
   if (countLabel) countLabel.textContent = pendingCount > 0 ? `· ${pendingCount} pending` : '';
   const btnApproveLabel = document.getElementById('btnBulkApprove');
-  if (btnApproveLabel) btnApproveLabel.textContent = `✓ Approve Semua Pending (${pendingCount})`;
+  if (btnApproveLabel) btnApproveLabel.textContent = `Approve Semua Pending (${pendingCount})`;
 
   tbody.innerHTML = data.map(o => {
     // Checkbox — pending aktif, lainnya disabled (tetap ada agar kolom tidak geser)
@@ -1355,10 +1372,10 @@ async function loadOpnameHistory(){
     } else {
       statusCell = `
         <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
-          <span class="pill" style="background:#fef3c7;color:#d97706;white-space:nowrap;">PENDING ⏳</span>
-          <button class="btn btn-sm btn-green" onclick="approveOpname(${o.id})" style="padding:4px 8px;font-size:11px;">✓ Approve</button>
-          <button class="btn btn-sm btn-gray" onclick="editOpnameQty(${o.id},${o.stock_fisik})" style="padding:4px 8px;font-size:11px;">✏️</button>
-          <button class="btn btn-sm btn-red" onclick="rejectOpname(${o.id})" style="padding:4px 8px;font-size:11px;">✗ Tolak</button>
+          <span class="pill" style="background:#fef3c7;color:#d97706;white-space:nowrap;">PENDING</span>
+          <button class="btn btn-sm btn-green" onclick="approveOpname(${o.id})" style="padding:4px 8px;font-size:11px;">Approve</button>
+          <button class="btn btn-sm btn-gray" onclick="editOpnameQty(${o.id},${o.stock_fisik})" style="padding:4px 8px;font-size:11px;">Edit</button>
+          <button class="btn btn-sm btn-red" onclick="rejectOpname(${o.id})" style="padding:4px 8px;font-size:11px;">Tolak</button>
         </div>`;
     }
 
@@ -1396,8 +1413,8 @@ function onOpnameChkChange(){
   // Update label tombol bulk sesuai jumlah yang dicentang
   const btnApprove = document.getElementById('btnBulkApprove');
   const btnTolak   = document.getElementById('btnBulkTolak');
-  if (btnApprove) btnApprove.textContent = n > 0 ? `✓ Approve Terpilih (${n})` : `✓ Approve Semua Pending`;
-  if (btnTolak)   btnTolak.textContent   = n > 0 ? `✗ Tolak Terpilih (${n})`  : `✗ Tolak Yang Dicentang`;
+  if (btnApprove) btnApprove.textContent = n > 0 ? `Approve Terpilih (${n})` : `Approve Semua Pending`;
+  if (btnTolak)   btnTolak.textContent   = n > 0 ? `Tolak Terpilih (${n})`  : `Tolak Yang Dicentang`;
 }
 
 async function loadOpnameKasirHistory(){
@@ -1429,24 +1446,24 @@ async function loadOpnameKasirHistory(){
     // Baris header tanggal SO
     let notifBadge = '';
     if (pending > 0)
-      notifBadge = `<span class="pill" style="background:#fef3c7;color:#d97706; margin-left:6px;">⏳ ${pending} Menunggu</span>`;
+      notifBadge = `<span class="pill" style="background:#fef3c7;color:#d97706; margin-left:6px;">${pending} Menunggu</span>`;
     if (approved > 0)
-      notifBadge += `<span class="pill pill-green" style="margin-left:4px;">✓ ${approved} Disetujui</span>`;
+      notifBadge += `<span class="pill pill-green" style="margin-left:4px;">${approved} Disetujui</span>`;
     if (rejected > 0)
-      notifBadge += `<span class="pill pill-red" style="margin-left:4px;">✗ ${rejected} Ditolak</span>`;
+      notifBadge += `<span class="pill pill-red" style="margin-left:4px;">${rejected} Ditolak</span>`;
 
     html += `<tr style="background:#f0f4ff;">
       <td colspan="5" style="font-weight:700; font-size:12px; color:#1a56db; padding:8px 14px;">
-        📅 SO Tanggal : ${tgl} &nbsp;·&nbsp; ${total} item ${notifBadge}
+        SO Tanggal : ${tgl} &nbsp;·&nbsp; ${total} item ${notifBadge}
       </td>
     </tr>`;
 
     items.forEach(o => {
       const statusBadge = o.status === 'approved'
-        ? `<span class="pill pill-green">✓ Disetujui</span>`
+        ? `<span class="pill pill-green">Disetujui</span>`
         : o.status === 'rejected'
-          ? `<span class="pill pill-red">✗ Ditolak</span>`
-          : `<span class="pill" style="background:#fef3c7;color:#d97706;">⏳ Menunggu Admin</span>`;
+          ? `<span class="pill pill-red">Ditolak</span>`
+          : `<span class="pill" style="background:#fef3c7;color:#d97706;">Menunggu Admin</span>`;
       html += `<tr>
         <td style="font-size:12px;">${o.created_at}</td>
         <td>${o.product_name}</td>
@@ -1464,7 +1481,7 @@ async function approveOpname(id){
   if (!confirm('Approve opname ini? Stok produk akan diperbarui sesuai hasil hitung fisik.')) return;
   try {
     await api('/opname/' + id + '/approve', 'POST');
-    toast('Opname berhasil di-approve ✅');
+    toast('Opname berhasil di-approve');
     loadOpnameHistory();
     loadDashboard();
   } catch(e){ toast(e.message, 'error'); }
@@ -1505,7 +1522,7 @@ async function approveAllPendingOpname(){
     } catch(e) { gagal++; }
   }
 
-  toast(`✅ ${sukses} opname di-approve` + (gagal > 0 ? ` · ${gagal} gagal` : ''), 'success');
+  toast(`${sukses} opname di-approve` + (gagal > 0 ? ` · ${gagal} gagal` : ''), 'success');
   loadOpnameHistory();
   loadDashboard();
 }
@@ -1720,39 +1737,123 @@ function findProductByBarcode(barcode){
 
 
 // ===== SCANNER KAMERA: STOK MASUK/KELUAR =====
+
+// ===== SHARED SCANNER HELPERS =====
+// Config scanner yg dioptimasi untuk semua perangkat:
+// - autofocus continuous (Android/iOS)
+// - toleransi blur & pantulan cahaya
+// - fps rendah supaya lebih banyak waktu decode per frame
+function getScannerCameraConstraints() {
+  return {
+    facingMode: { ideal: 'environment' },
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    advanced: [{
+      focusMode: 'continuous',
+      exposureMode: 'continuous',
+      whiteBalanceMode: 'continuous'
+    }]
+  };
+}
+
+// Paksa autofocus — Android Chrome, Samsung, Xiaomi, dll
+async function forceAutoFocus(videoElement) {
+  if (!videoElement) return;
+  try {
+    const stream = videoElement.srcObject;
+    if (!stream) return;
+    const track = stream.getVideoTracks()[0];
+    if (!track) return;
+    const cap = track.getCapabilities?.() || {};
+    // Toggle manual → continuous supaya kamera refocus ulang
+    if (cap.focusMode?.includes('continuous')) {
+      if (cap.focusMode?.includes('manual')) {
+        await track.applyConstraints({ advanced: [{ focusMode: 'manual' }] }).catch(()=>{});
+        await new Promise(r => setTimeout(r, 80));
+      }
+      await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(()=>{});
+    }
+    // iPhone Safari — pakai ImageCapture kalau tersedia
+    if (window.ImageCapture) {
+      try {
+        const ic = new ImageCapture(track);
+        await ic.getPhotoCapabilities();
+      } catch(e) {}
+    }
+  } catch(e) {}
+}
+
+// Jalankan autofocus setiap 1.5 detik selama scanner aktif
+function startFocusInterval(readerId) {
+  return setInterval(() => {
+    const video = document.querySelector('#' + readerId + ' video');
+    if (video) forceAutoFocus(video);
+  }, 1500);
+}
+
+function getScannerConfig() {
+  // Area scan 85% lebar layar — tidak perlu posisi pas banget
+  const vw = Math.min(window.innerWidth, 640);
+  const w = Math.round(vw * 0.85);
+  const h = Math.round(w * 0.40);
+  return {
+    fps: 25,
+    qrbox: { width: w, height: h },
+    aspectRatio: 1.7778,
+    disableFlip: false,
+    rememberLastUsedCamera: true,
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+    formatsToSupport: [
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39
+    ]
+  };
+}
+
+function stopAndHideScanner(scanner, readerId) {
+  try { scanner.stop().catch(()=>{}); } catch(e) {}
+  const el = document.getElementById(readerId);
+  if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+}
+
 function startBarcodeScanner(){
   const reader = document.getElementById('reader');
   if(!reader){ toast('Reader tidak ditemukan', 'error'); return; }
   reader.style.display = 'block';
+  reader.innerHTML = '';
   const scanner = new Html5Qrcode('reader');
+  let focusInterval = null;
   scanner.start(
-    { facingMode: 'environment' },
-    { fps: 20, qrbox: { width: 300, height: 150 }, aspectRatio: 1.7778,
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A,  Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39
-      ]
-    },
+    getScannerCameraConstraints(),
+    getScannerConfig(),
     async (decodedText) => {
-      await scanner.stop();
-      reader.style.display = 'none';
+      clearInterval(focusInterval);
+      stopAndHideScanner(scanner, 'reader');
       const scanInput = document.getElementById('scanBarcode');
       if (scanInput) {
         scanInput.value = decodedText;
-        // PENTING: trigger event 'input' agar setupStockScanListener() mendeteksi nilai baru
         scanInput.dispatchEvent(new Event('input', { bubbles: true }));
       }
       const exact = stockProducts.find(p => String(p.barcode || '').trim() === decodedText.trim());
-      if (exact) {
-        pilihProdukStock(exact);
-      } else {
-        showStockSearch(decodedText);
-        toast('Barcode tidak ditemukan di daftar produk', 'error');
-      }
+      if (exact) { pilihProdukStock(exact); }
+      else { showStockSearch(decodedText); toast('Barcode tidak ditemukan di daftar produk', 'error'); }
     },
     () => {}
-  );
+  ).then(() => {
+    // Mulai interval autofocus setelah kamera aktif
+    setTimeout(() => {
+      const video = document.querySelector('#reader video');
+      if (video) forceAutoFocus(video);
+      focusInterval = startFocusInterval('reader');
+    }, 800);
+  }).catch(err => {
+    reader.style.display = 'none';
+    toast('Gagal akses kamera: ' + (err.message || err), 'error');
+  });
 }
 
 // ===== SCANNER KAMERA: STOCK OPNAME =====
@@ -1760,24 +1861,30 @@ async function startOpnameScanner(){
   const reader = document.getElementById('opnameReader');
   if(!reader){ toast('Reader opname tidak ditemukan', 'error'); return; }
   reader.style.display = 'block';
+  reader.innerHTML = '';
   const scanner = new Html5Qrcode('opnameReader');
+  let focusInterval = null;
   scanner.start(
-    { facingMode: 'environment' },
-    { fps: 20, qrbox: { width: 300, height: 120 }, aspectRatio: 1.7778,
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A,  Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39
-      ]
-    },
+    getScannerCameraConstraints(),
+    getScannerConfig(),
     async (decodedText) => {
-      document.getElementById('scanBarcodeOpname').value = decodedText;
+      clearInterval(focusInterval);
+      stopAndHideScanner(scanner, 'opnameReader');
+      const inp = document.getElementById('scanBarcodeOpname');
+      if (inp) inp.value = decodedText;
       await handleOpnameScan(decodedText);
-      await scanner.stop();
-      reader.style.display = 'none';
     },
     () => {}
-  );
+  ).then(() => {
+    setTimeout(() => {
+      const v = document.querySelector('#opnameReader video');
+      if (v) forceAutoFocus(v);
+      focusInterval = startFocusInterval('opnameReader');
+    }, 800);
+  }).catch(err => {
+    reader.style.display = 'none';
+    toast('Gagal akses kamera: ' + (err.message || err), 'error');
+  });
 }
 
 // Listener scanBarcode dihandle di setupStockScanListener() — tidak perlu duplikat di sini
@@ -1800,21 +1907,8 @@ async function startProductBarcodeScanner(){
 
   try {
     await scanner.start(
-      { facingMode: 'environment' },
-      {
-        fps: 20,
-        // qrbox memanjang horizontal — penting untuk EAN-13 / barcode produk
-        qrbox: { width: 300, height: 120 },
-        aspectRatio: 1.7778,
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39
-        ]
-      },
+      getScannerCameraConstraints(),
+      getScannerConfig(280, 120),
       async (decodedText) => {
         // Stop scanner segera setelah barcode terbaca
         try { await scanner.stop(); } catch(e) {}
