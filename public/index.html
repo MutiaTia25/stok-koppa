@@ -246,6 +246,7 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
   color: var(--text-muted);
 }
 .icon-btn:hover { background: var(--border); transform: scale(1.05); }
+.icon-btn svg { width: 17px; height: 17px; }
 
 /* ===== HAMBURGER ===== */
 .hamburger {
@@ -256,10 +257,10 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
   border-radius: 9px;
   cursor: pointer;
   align-items: center; justify-content: center;
-  font-size: 18px;
   flex-shrink: 0;
   color: var(--text-muted);
 }
+.hamburger svg { width: 19px; height: 19px; }
 
 /* ===== LAYOUT ===== */
 .layout {
@@ -323,11 +324,12 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
   width: 28px; height: 28px;
   border-radius: 7px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 14px;
   flex-shrink: 0;
   background: var(--gray-light);
+  color: var(--text-muted);
   transition: background .12s, color .12s;
 }
+.sb-icon-wrap svg { width: 16px; height: 16px; }
 .sidebar button:hover .sb-icon-wrap { background: #e5e7eb; }
 
 .sidebar-overlay {
@@ -417,12 +419,12 @@ input, select, button, textarea { font-family: inherit; font-size: inherit; }
   width: 44px; height: 44px;
   border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 21px;
 }
-.icon-blue { background: #dbeafe; }
-.icon-green { background: var(--green-light); }
-.icon-red { background: var(--red-light); }
-.icon-orange { background: var(--orange-light); }
+.card .icon-box svg { width: 21px; height: 21px; }
+.icon-blue { background: #dbeafe; color: var(--primary); }
+.icon-green { background: var(--green-light); color: var(--green); }
+.icon-red { background: var(--red-light); color: var(--red); }
+.icon-orange { background: var(--orange-light); color: var(--orange); }
 
 /* ===== GRID ===== */
 .grid-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; margin-bottom: 22px; }
@@ -574,6 +576,7 @@ tbody tr:hover td { background: #f9fafb; }
   text-decoration: none;
   letter-spacing: .1px;
 }
+.btn svg { width: 15px; height: 15px; flex-shrink: 0; }
 .btn:hover { transform: translateY(-1px); }
 .btn:active { transform: translateY(0); filter: brightness(.95); }
 .btn-primary { background: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(26,86,219,.28); }
@@ -812,9 +815,11 @@ tbody tr:hover td { background: #f9fafb; }
   .cards { grid-template-columns: 1fr 1fr; gap: 8px; }
   .content { padding: 12px; }
   .panel { padding: 16px; }
-  .card .icon-box { width: 38px; height: 38px; font-size: 17px; }
+  .card .icon-box { width: 38px; height: 38px; }
+  .card .icon-box svg { width: 18px; height: 18px; }
   .topbar { padding: 0 12px; }
   .brand .logo-icon svg { width: 34px; height: 34px; }
+  .scan-field { flex-basis: 100%; }
 }
 
 /* ===== SCROLL ===== */
@@ -837,6 +842,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 /* ===== SCAN FIELD FOCUS ===== */
 .scan-field {
   flex: 1;
+  min-width: 0;
   padding: 12px 14px;
   border: 2px solid var(--border);
   border-radius: var(--radius);
@@ -899,7 +905,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
   <!-- TOPBAR -->
   <div class="topbar">
     <div style="display:flex; align-items:center; gap:10px;">
-      <button class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()" title="Menu">☰</button>
+      <button class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()" title="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
       <div class="brand">
         <div class="logo-icon">
           <svg viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -921,13 +927,13 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
       </div>
     </div>
     <div class="user-info">
-      <button class="icon-btn" title="Ganti Password" onclick="openPasswordModal()">🔒</button>
+      <button class="icon-btn" title="Ganti Password" onclick="openPasswordModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>
       <div class="user-meta">
         <div class="name" id="userName"></div>
         <div class="role" id="userRole"></div>
       </div>
       <div class="avatar" id="userAvatar"></div>
-      <button class="icon-btn" title="Keluar" onclick="logout()">🚪</button>
+      <button class="icon-btn" title="Keluar" onclick="logout()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
     </div>
   </div>
 
@@ -952,11 +958,11 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         <div class="cards" id="dashCards"></div>
         <div class="grid-2">
           <div class="panel">
-            <h3>📊 Stok per Kategori</h3>
+            <h3>Stok per Kategori</h3>
             <div class="chart-wrap"><canvas id="categoryChart"></canvas></div>
           </div>
           <div class="panel" id="dashAdminPanel">
-            <h3>⚠️ Produk Perlu Perhatian</h3>
+            <h3>Produk Perlu Perhatian</h3>
             <div class="subtitle">Stok di bawah ambang minimum</div>
             <div class="table-wrap">
               <table>
@@ -976,20 +982,20 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
             <div class="subtitle">Kelola produk, stok, dan ambang batas</div>
           </div>
           <div class="page-header-actions" id="productAdminActions">
-            <button class="btn btn-outline btn-sm" onclick="exportProducts()">⬇️ Export</button>
-            <button class="btn btn-green btn-sm" onclick="document.getElementById('excelImport').click()">📥 Import</button>
+            <button class="btn btn-outline btn-sm" onclick="exportProducts()">Export</button>
+            <button class="btn btn-green btn-sm" onclick="document.getElementById('excelImport').click()">Import</button>
             <input type="file" id="excelImport" accept=".xlsx" style="display:none" onchange="importExcel(this.files[0])">
             <button class="btn btn-primary btn-sm" onclick="openProductModal()">+ Tambah</button>
           </div>
         </div>
         <div class="toolbar">
-          <input type="search" id="searchProduct" placeholder="🔍 Cari nama produk atau SKU..." oninput="loadProducts()">
+          <input type="search" id="searchProduct" placeholder="Cari nama produk atau SKU..." oninput="loadProducts()">
           <select id="filterCategory" onchange="loadProducts()"><option value="">Semua Kategori</option></select>
         </div>
         <div class="bulk-bar" id="bulkDeleteBar">
           <span id="bulkCountLabel" style="font-size:13px; font-weight:700; color:#b91c1c; flex:1;"></span>
-          <button class="btn btn-red btn-sm" onclick="bulkDeleteProducts()">🗑️ Hapus</button>
-          <button class="btn btn-gray btn-sm" onclick="clearProductSelection()">✕</button>
+          <button class="btn btn-red btn-sm" onclick="bulkDeleteProducts()">Hapus</button>
+          <button class="btn btn-gray btn-sm" onclick="clearProductSelection()">Batal</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -1010,12 +1016,12 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
             <div class="subtitle">Catat penerimaan dari supplier atau pengeluaran barang dari gudang</div>
           </div>
           <div class="page-header-actions">
-            <button class="btn btn-outline btn-sm" onclick="exportLogs()">⬇️ Export Riwayat</button>
+            <button class="btn btn-outline btn-sm" onclick="exportLogs()">Export Riwayat</button>
           </div>
         </div>
 
         <div class="panel">
-          <h3>📦 Form Transaksi Stok</h3>
+          <h3>Form Transaksi Stok</h3>
           <div class="subtitle">Pilih lokasi, lalu scan barcode atau ketik nama produk untuk melakukan transaksi</div>
           <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
             <label style="font-size:13px; font-weight:600; color:#475569; white-space:nowrap;">Lokasi:</label>
@@ -1024,13 +1030,13 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
               <option value="mess">MIMS / Mess</option>
             </select>
           </div>
-          <div style="display:flex; gap:8px; align-items:center;">
-            <input type="text" id="scanBarcode" placeholder="📷 Scan barcode atau ketik nama produk..."
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="text" id="scanBarcode" placeholder="Scan barcode atau ketik nama produk..."
               autocomplete="off" class="scan-field"
               onfocus="this.style.borderColor='var(--primary)'; this.style.background='#fff'; this.style.boxShadow='0 0 0 3px rgba(26,86,219,.1)';"
               onblur="this.style.borderColor=''; this.style.background=''; this.style.boxShadow='';">
-            <button type="button" class="btn btn-primary" onclick="startBarcodeScanner()">📷 Kamera</button>
-            <button type="button" class="btn btn-gray" onclick="resetStockForm()">✕</button>
+            <button type="button" class="btn btn-primary" onclick="startBarcodeScanner()">Kamera</button>
+            <button type="button" class="btn btn-gray" onclick="resetStockForm()" title="Batal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
           </div>
           <div id="stockSearchResults" style="display:none; margin-top:4px; border:1.5px solid var(--border); border-radius:var(--radius); background:#fff; max-height:260px; overflow-y:auto; box-shadow:var(--shadow-lg);"></div>
           <div id="stockInlineForm" style="display:none;"></div>
@@ -1039,7 +1045,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         </div>
 
         <div class="panel">
-          <h3>📋 Riwayat Stok</h3>
+          <h3>Riwayat Stok</h3>
           <div class="toolbar">
             <input type="date" id="logFrom" onchange="loadLogs()">
             <input type="date" id="logTo" onchange="loadLogs()">
@@ -1066,8 +1072,8 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
             <div class="subtitle">Riwayat stok dan kondisi stok saat ini</div>
           </div>
           <div class="page-header-actions">
-            <button class="btn btn-outline btn-sm" onclick="exportLaporan()">⬇️ Excel</button>
-            <button class="btn btn-outline btn-sm" onclick="exportPdf()">⬇️ PDF</button>
+            <button class="btn btn-outline btn-sm" onclick="exportLaporan()">Excel</button>
+            <button class="btn btn-outline btn-sm" onclick="exportPdf()">PDF</button>
           </div>
         </div>
         <div class="toolbar">
@@ -1102,12 +1108,12 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
             <div class="subtitle" id="opnameSubtitle">Scan barcode atau ketik nama produk, isi qty, lalu simpan</div>
           </div>
           <div class="page-header-actions" id="opnameAdminActions" style="display:none;">
-            <button class="btn btn-outline btn-sm" onclick="exportOpnameExcel()">⬇️ Export Excel SO</button>
+            <button class="btn btn-outline btn-sm" onclick="exportOpnameExcel()">Export Excel SO</button>
           </div>
         </div>
 
         <div class="panel">
-          <div style="font-weight:700; margin-bottom:10px; font-size:14px; color:var(--text);">🔍 Scan Barcode atau Cari Produk</div>
+          <div style="font-weight:700; margin-bottom:10px; font-size:14px; color:var(--text);">Scan Barcode atau Cari Produk</div>
           <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
             <label style="font-size:13px; font-weight:600; color:#475569; white-space:nowrap;">Lokasi:</label>
             <select id="opnameSiteSelect" onchange="onOpnameSiteChange()" style="padding:8px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; flex:1; min-width:160px;">
@@ -1116,14 +1122,14 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
             </select>
           </div>
           <div class="opname-search-wrap">
-            <div style="display:flex; gap:8px; align-items:center;">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
               <input id="scanBarcodeOpname" type="text"
                 placeholder="Scan barcode atau ketik nama produk..."
                 autocomplete="off" class="scan-field"
                 onfocus="this.style.borderColor='var(--primary)'; this.style.background='#fff'; this.style.boxShadow='0 0 0 3px rgba(26,86,219,.1)';"
                 onblur="this.style.borderColor=''; this.style.background=''; this.style.boxShadow='';"/>
-              <button class="btn btn-primary" onclick="startOpnameScanner()">📷 Kamera</button>
-              <button class="btn btn-gray btn-icon" onclick="resetOpnameForm()">✕</button>
+              <button class="btn btn-primary" onclick="startOpnameScanner()">Kamera</button>
+              <button class="btn btn-gray btn-icon" onclick="resetOpnameForm()" title="Batal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
             </div>
             <div id="opnameSearchResults"></div>
           </div>
@@ -1134,16 +1140,16 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 
         <div id="opnameHistoryPanel" class="panel" style="display:none;">
           <h3 style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
-            <span>📋 Riwayat & Approval Stock Opname</span>
+            <span>Riwayat & Approval Stock Opname</span>
           </h3>
           <!-- Bulk Action Bar — selalu tampil untuk admin -->
           <div id="opnameBulkBar" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; padding:12px 16px; background:#eff6ff; border:1.5px solid #bfd2f9; border-radius:var(--radius);">
-            <span style="font-size:13px; font-weight:700; color:#1a56db;">⚡ Aksi Massal</span>
+            <span style="font-size:13px; font-weight:700; color:#1a56db;">Aksi Massal</span>
             <span style="color:#cbd5e1; font-size:13px;">|</span>
-            <button id="btnBulkApprove" class="btn btn-green btn-sm" onclick="approveAllPendingOpname()">✓ Approve Semua Pending</button>
-            <button id="btnBulkTolak" class="btn btn-red btn-sm" onclick="rejectCheckedOpname()">✗ Tolak Yang Dicentang</button>
+            <button id="btnBulkApprove" class="btn btn-green btn-sm" onclick="approveAllPendingOpname()">Approve Semua Pending</button>
+            <button id="btnBulkTolak" class="btn btn-red btn-sm" onclick="rejectCheckedOpname()">Tolak Yang Dicentang</button>
             <span id="opnamePendingCount" style="font-size:12px; color:#6b7280; margin-left:4px;"></span>
-            <span style="font-size:11px; color:#94a3b8; margin-left:auto;">💡 Centang baris tertentu dulu untuk pilih sebagian</span>
+            <span style="font-size:11px; color:#94a3b8; margin-left:auto;">Centang baris tertentu dulu untuk pilih sebagian</span>
           </div>
           <div class="toolbar">
             <input type="date" id="opFrom" onchange="loadOpnameHistory()">
@@ -1180,9 +1186,9 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         </div>
 
         <div id="opnameKasirHistoryPanel" class="panel" style="display:none;">
-          <h3>📋 Status Opname Saya</h3>
+          <h3>Status Opname Saya</h3>
           <div id="opnameKasirInfo" style="display:none; margin-bottom:10px; padding:12px 14px; background:var(--primary-light); border-radius:var(--radius); font-size:13px; color:var(--primary-dark);">
-            ℹ️ Data opname akan dikirim ke admin untuk di-approve sebelum stok diperbarui.
+            ℹData opname akan dikirim ke admin untuk di-approve sebelum stok diperbarui.
           </div>
           <div class="table-wrap">
             <table>
@@ -1259,7 +1265,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         <label>Barcode</label>
         <div style="display:flex; gap:8px;">
           <input type="text" id="barcode" placeholder="Scan atau ketik" style="flex:1;">
-          <button type="button" class="btn btn-primary btn-sm" onclick="startProductBarcodeScanner()">📷</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="startProductBarcodeScanner()" title="Scan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg></button>
         </div>
         <div id="productReader" style="display:none; width:100%; margin-top:8px; border-radius:8px; overflow:hidden;"></div>
       </div>
@@ -1281,7 +1287,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
         <input type="text" id="productUnit" placeholder="PCS" value="PCS">
       </div>
     </div>
-    <div class="modal-section-title">📦 Stok</div>
+    <div class="modal-section-title">Stok</div>
     <label id="stockLabel">Stok Saat Ini</label>
     <input type="number" id="productStock" min="0" value="0">
     <small style="color:var(--gray); font-size:11px;">Ubah stok lewat menu Stok Masuk/Keluar</small>
@@ -1395,7 +1401,7 @@ if ('serviceWorker' in navigator) {
 // ===== OFFLINE BANNER =====
 const offlineBanner = document.createElement('div');
 offlineBanner.id = 'offlineBanner';
-offlineBanner.innerHTML = '📵 Tidak ada koneksi internet — Menampilkan data terakhir';
+offlineBanner.innerHTML = 'Tidak ada koneksi internet — Menampilkan data terakhir';
 offlineBanner.style.cssText = `
   display:none; position:fixed; top:0; left:0; right:0; z-index:9999;
   background:#f59e0b; color:#fff; text-align:center;
