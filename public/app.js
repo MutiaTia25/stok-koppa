@@ -67,6 +67,7 @@ async function login(){
   }
 }
 function logout(){
+  stopOpnamePolling();
   localStorage.removeItem('stok_token');
   localStorage.removeItem('stok_user');
   authToken = null;
@@ -144,13 +145,38 @@ function showPage(id){
   const contentEl = document.querySelector('.content');
   if (contentEl) contentEl.scrollTop = 0;
 
+  // Matikan polling riwayat opname setiap kali pindah halaman;
+  // dinyalakan lagi di bawah kalau memang masuk ke halaman opname.
+  stopOpnamePolling();
+
   if (id === 'dashboard') loadDashboard();
   if (id === 'products') { loadCategories().then(()=>loadProducts()); }
   if (id === 'stock') { loadStockPage(); }
   if (id === 'categories') loadCategoriesPage();
   if (id === 'users') loadUsersPage();
   if (id === 'reports') loadReportPage();
-  if (id === 'opname') loadOpnamePage();
+  if (id === 'opname') {
+    loadOpnamePage();
+    if (currentUser.role !== 'admin') startOpnamePolling(); // cuma kasir yang di-poll
+  }
+}
+
+// ===== POLLING RIWAYAT OPNAME (khusus kasir) =====
+// Supaya begitu admin approve/tolak, status "Riwayat SO Saya" di layar kasir
+// ikut berubah sendiri tanpa perlu refresh (refresh bikin kasir balik ke
+// Dashboard). Cuma refresh tabel riwayat-nya saja, form yang sedang diisi
+// tidak diganggu. Tidak dipakai untuk admin supaya tidak mengganggu
+// checkbox yang sedang dicentang untuk aksi massal.
+let opnamePollInterval = null;
+function startOpnamePolling(){
+  stopOpnamePolling();
+  opnamePollInterval = setInterval(() => {
+    if (document.hidden) return; // jangan poll kalau tab sedang tidak aktif
+    loadOpnameKasirHistory();
+  }, 5000);
+}
+function stopOpnamePolling(){
+  if (opnamePollInterval) { clearInterval(opnamePollInterval); opnamePollInterval = null; }
 }
 
 // ===== DASHBOARD =====
@@ -254,18 +280,17 @@ async function loadDashboard(){
 
   const tbody = document.getElementById('lowStockTable');
   tbody.innerHTML = sum.lowStockItems.map(p => {
-    let saran = [];
-    if (p.warehouse_reorder_qty > 0) saran.push(`Order gudang +${p.warehouse_reorder_qty}`);
-    if (p.display_refill_qty > 0) saran.push(`Isi display +${p.display_refill_qty}`);
+    const locLabel = p.location === 'mess' ? 'MIMS/Mess' : 'MIOF/Office';
+    const reorderQty = p.warehouse_reorder_qty > 0 ? p.warehouse_reorder_qty : Math.max(0, p.warehouse_min - p.warehouse_stock);
+    const saran = reorderQty > 0 ? `Order +${reorderQty}` : '-';
     return `
     <tr>
-      <td>${p.name}</td>
+      <td>${p.name} <span style="font-size:10px;color:#94a3b8;">(${locLabel})</span></td>
       <td class="${p.warehouse_stock <= p.warehouse_min ? 'stock-low' : ''}">${p.warehouse_stock}</td>
-      <td class="${p.display_stock <= p.display_min ? 'stock-low' : ''}">${p.display_stock}</td>
-      <td>${saran.length ? `<span style="color:#dc2626; font-weight:600; font-size:12px;">${saran.join('<br>')}</span>` : '-'}</td>
+      <td>${saran !== '-' ? `<span style="color:#dc2626; font-weight:600; font-size:12px;">${saran}</span>` : '-'}</td>
     </tr>
   `;
-  }).join('') || '<tr><td colspan="4" class="empty">✅ Semua stok aman</td></tr>';
+  }).join('') || '<tr><td colspan="3" class="empty">✅ Semua stok aman</td></tr>';
 }
 
 // ===== CATEGORIES =====
@@ -340,9 +365,12 @@ async function loadProducts(){
   if (adminActions) adminActions.style.display = isAdmin ? '' : 'none';
   if (bulkBar && !isAdmin) bulkBar.style.display = 'none';
   if (thCheckbox) thCheckbox.style.display = isAdmin ? '' : 'none';
-  if (thAksi) thAksi.textContent = isAdmin ? 'Aksi' : '';
-  // Kasir: sembunyikan kolom stok & lokasi
-  const kasirHideCols = ['thLokasi','thOffice','thMess','thSatuan','thMin','thMax'];
+  // Kasir: tampilkan Lokasi tapi sembunyikan kolom stok & aksi (kasir tidak boleh edit/hapus)
+  if (thAksi) {
+    thAksi.textContent = isAdmin ? 'Aksi' : '';
+    thAksi.style.display = isAdmin ? '' : 'none';
+  }
+  const kasirHideCols = ['thQty','thSatuan','thMin','thMax'];
   kasirHideCols.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isAdmin ? '' : 'none';
@@ -356,14 +384,14 @@ async function loadProducts(){
   const products = await api(url);
   const tbody = document.getElementById('productsTable');
   tbody.innerHTML = products.map(p => {
-    const locationLabel = p.location === 'mess' ? 'MIPL / Mess' : 'MIOF / Gudang';
+    const locationLabel = p.location === 'mess' ? 'MIMS / Mess' : 'MIOF / Office';
     const productLabel  = p.sku ? `[${p.sku}] ${p.name}` : p.name;
-    const totalQty      = p.warehouse_stock + p.display_stock;
 
     if (!isAdmin) {
-      // Kasir: hanya tampil Barcode, Nama Produk, Kategori, Harga
+      // Kasir: tampil Lokasi, Barcode, Nama Produk, Kategori, Harga
       return `
       <tr>
+        <td>${locationLabel}</td>
         <td>${p.barcode || '-'}</td>
         <td>${productLabel}</td>
         <td>${p.category_name}</td>
@@ -380,7 +408,6 @@ async function loadProducts(){
       <td>${productLabel}</td>
       <td>${p.category_name}</td>
       <td>${p.warehouse_stock}</td>
-      <td>${p.display_stock}</td>
       <td>${p.unit || 'PCS'}</td>
       <td>${formatRupiah(p.price)}</td>
       <td>${p.warehouse_min}</td>
@@ -390,7 +417,7 @@ async function loadProducts(){
         <button class="btn btn-sm btn-red" onclick="deleteProduct(${p.id})">Hapus</button>
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="${isAdmin ? 12 : 4}" class="empty">Belum ada produk</td></tr>`;
+  }).join('') || `<tr><td colspan="${isAdmin ? 11 : 5}" class="empty">Belum ada produk</td></tr>`;
 
   // Reset select all
   const selectAll = document.getElementById('selectAllProducts');
@@ -452,40 +479,29 @@ function openProductModal(product=null){
   document.getElementById('productPrice').value = product ? product.price : 0;
   document.getElementById('productUnit').value = product ? (product.unit || 'PCS') : 'PCS';
 
-  // Min & Max: Office dan Mess selalu sama (sesuai Excel)
-  const minVal = product ? product.warehouse_min : 5;
-  const maxVal = product ? (product.warehouse_max || 0) : 0;
-  document.getElementById('productWarehouseMin').value = minVal;
-  document.getElementById('productWarehouseMax').value = maxVal;
-  document.getElementById('productMessMin').value = minVal;
-  document.getElementById('productMessMax').value = maxVal;
+  const minVal = product ? product.warehouse_min : 48;
+  const maxVal = product ? (product.warehouse_max || 1000) : 1000;
+  document.getElementById('productMin').value = minVal;
+  document.getElementById('productMax').value = maxVal;
 
-  const wStockInput = document.getElementById('productWarehouseStock');
-  const dStockInput = document.getElementById('productMessStock');
-  const wLabel = document.getElementById('warehouseStockLabel');
-  const dLabel = document.getElementById('displayStockLabel');
+  const stockInput = document.getElementById('productStock');
+  const stockLabel = document.getElementById('stockLabel');
 
   if (product){
-    wStockInput.value = product.warehouse_stock;
-    wStockInput.disabled = true;
-    wLabel.textContent = 'Stok Office Saat Ini (ubah di menu Stok Masuk/Keluar)';
-    dStockInput.value = product.display_stock;
-    dStockInput.disabled = true;
-    dLabel.textContent = 'Stok Mess Saat Ini (ubah via Transfer Stok)';
+    stockInput.value = product.warehouse_stock;
+    stockInput.disabled = true;
+    stockLabel.textContent = 'Stok Saat Ini (ubah di menu Stok Masuk/Keluar)';
   } else {
-    wStockInput.value = 0;
-    wStockInput.disabled = false;
-    wLabel.textContent = 'Stok Office Awal';
-    dStockInput.value = 0;
-    dStockInput.disabled = false;
-    dLabel.textContent = 'Stok Mess Awal';
+    stockInput.value = 0;
+    stockInput.disabled = false;
+    stockLabel.textContent = 'Stok Awal';
   }
   // Set lokasi default sesuai data produk
   // Normalize: DB bisa kirim 'office'/'warehouse'→office atau 'mess'/'display'→mess
   let locVal = 'office';
   if (product && product.location) {
     const l = product.location.toLowerCase();
-    locVal = (l === 'mess' || l === 'display' || l.includes('mipl') || l.includes('mips')) ? 'mess' : 'office';
+    locVal = (l === 'mess' || l === 'display' || l.includes('mims') || l.includes('mipl')) ? 'mess' : 'office';
   }
   document.getElementById('location').value = locVal;
 
@@ -502,13 +518,9 @@ async function saveProduct(){
   const price = parseInt(document.getElementById('productPrice').value) || 0;
   const unit = document.getElementById('productUnit').value.trim() || 'PCS';
 
-  const warehouse_stock = parseInt(document.getElementById('productWarehouseStock').value) || 0;
-  const warehouse_min = parseInt(document.getElementById('productWarehouseMin').value) || 0;
-  const warehouse_max = parseInt(document.getElementById('productWarehouseMax').value) || 0;
-  const display_stock = parseInt(document.getElementById('productMessStock').value) || 0;
-  // Office dan Mess min/max selalu sama
-  const display_min = warehouse_min;
-  const display_max = warehouse_max;
+  const warehouse_stock = parseInt(document.getElementById('productStock').value) || 0;
+  const warehouse_min = parseInt(document.getElementById('productMin').value) || 0;
+  const warehouse_max = parseInt(document.getElementById('productMax').value) || 0;
 
   if (!name || !category_id) return toast('Nama dan kategori wajib diisi', 'error');
   if (warehouse_max > 0 && warehouse_max < warehouse_min) return toast('Stok maksimum harus lebih besar dari minimum', 'error');
@@ -517,14 +529,13 @@ async function saveProduct(){
     if (id) {
       await api('/products/' + id, 'PUT', {
         name, category_id, price, sku, barcode, location, unit,
-        warehouse_min, warehouse_max, display_min, display_max
+        warehouse_min, warehouse_max
       });
       toast('Produk diperbarui');
     } else {
       await api('/products', 'POST', {
         name, category_id, price, sku, barcode, location, unit,
-        warehouse_stock, warehouse_min, warehouse_max,
-        display_stock, display_min, display_max
+        warehouse_stock, warehouse_min, warehouse_max
       });
       toast('Produk ditambahkan');
     }
@@ -584,13 +595,26 @@ async function importExcel(file){
 // ===== STOCK IN/OUT (GUDANG) =====
 // Cache produk untuk stok masuk/keluar
 let stockProducts = [];
+let stockProductsAll = [];
 let stockSelectedProduct = null;
 
 async function loadStockPage(){
   await loadCategories();
-  stockProducts = await api('/products');
+  stockProductsAll = await api('/products');
 
-  // Isi hidden select (untuk kompatibilitas submitStock lama)
+  // Setup scan listener (flag mencegah duplikat attachment)
+  setupStockScanListener();
+
+  // Terapkan filter lokasi ke panel Stok Masuk/Keluar
+  applyStockLocationFilter();
+
+  loadLogs();
+}
+
+function applyStockLocationFilter(){
+  const loc = document.getElementById('stockLocationSelect')?.value || 'office';
+  stockProducts = stockProductsAll.filter(p => (p.location || 'office') === loc);
+
   const sel = document.getElementById('stockProductSelect');
   if (sel) sel.innerHTML = stockProducts.map(p =>
     `<option value="${p.id}" data-barcode="${p.barcode || ''}">${p.name}</option>`
@@ -603,25 +627,10 @@ async function loadStockPage(){
   hideStockSearch();
   const formElReset = document.getElementById('stockInlineForm');
   if (formElReset) { formElReset.style.display = 'none'; formElReset.innerHTML = ''; }
+}
 
-  // Setup scan listener (flag mencegah duplikat attachment)
-  setupStockScanListener();
-
-  // Transfer — isi hidden select (kompatibilitas) + setup listener baru
-  transferProducts = stockProducts;
-  const transferSel = document.getElementById('transferProductSelect');
-  if (transferSel) {
-    transferSel.innerHTML = stockProducts.map(p =>
-      `<option value="${p.id}">${p.name} - ${p.category_name}</option>`
-    ).join('');
-  }
-
-  // Reset form transfer ke kondisi awal
-  resetTransferForm();
-
-  loadLogs();
-  loadTransferHistory();
-  setupTransferScanListener();
+function onStockLocationChange(){
+  applyStockLocationFilter();
 }
 
 function setupStockScanListener(){
@@ -709,13 +718,13 @@ function showStockSearch(query){
       style="padding:11px 14px; cursor:pointer; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center;"
       onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background=''">
       <div>
-        <div style="font-weight:600; font-size:13px; color:#1e293b;">${p.name}</div>
+        <div style="font-weight:600; font-size:13px; color:#1e293b;">${p.name} <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; background:${p.location==='mess'?'#dcfce7':'#dbeafe'}; color:${p.location==='mess'?'#15803d':'#1d4ed8'};">${p.location==='mess'?'MIMS/Mess':'MIOF/Office'}</span></div>
         <div style="font-size:11px; color:#94a3b8; margin-top:2px;">
           Barcode: ${p.barcode || '-'} &nbsp;|&nbsp; SKU: ${p.sku || '-'} &nbsp;|&nbsp; ${p.category_name}
         </div>
       </div>
       <div style="font-size:12px; color:#64748b; text-align:right; white-space:nowrap; margin-left:12px;">
-        Office: <b>${p.warehouse_stock}</b><br>Mess: <b>${p.display_stock}</b>
+        Stok: <b>${p.warehouse_stock}</b>
       </div>
     </div>
   `).join('');
@@ -766,19 +775,15 @@ function renderStockForm(product){
   const _isAdminStock = currentUser.role === 'admin';
   formEl.innerHTML = `
     <div style="margin-top:12px; padding:14px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
-      <div style="font-weight:700; font-size:15px; color:#1e293b; margin-bottom:4px;">📦 ${product.name}</div>
+      <div style="font-weight:700; font-size:15px; color:#1e293b; margin-bottom:4px;">📦 ${product.name} <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; background:${product.location==='mess'?'#dcfce7':'#dbeafe'}; color:${product.location==='mess'?'#15803d':'#1d4ed8'};">${product.location==='mess'?'MIMS/Mess':'MIOF/Office'}</span></div>
       <div style="font-size:12px; color:#64748b; margin-bottom:12px;">
         Barcode: ${product.barcode || '-'} &nbsp;|&nbsp; SKU: ${product.sku || '-'} &nbsp;|&nbsp; Satuan: ${product.unit || 'PCS'}
       </div>
       ${_isAdminStock ? `
       <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
         <div style="flex:1; min-width:120px; background:#dbeafe; border-radius:8px; padding:10px 14px; text-align:center;">
-          <div style="font-size:11px; color:#1d4ed8; font-weight:600;">STOK OFFICE (Sistem)</div>
+          <div style="font-size:11px; color:#1d4ed8; font-weight:600;">STOK (Sistem)</div>
           <div style="font-size:22px; font-weight:800; color:#1e3a8a;">${product.warehouse_stock}</div>
-        </div>
-        <div style="flex:1; min-width:120px; background:#dcfce7; border-radius:8px; padding:10px 14px; text-align:center;">
-          <div style="font-size:11px; color:#16a34a; font-weight:600;">STOK MESS (Sistem)</div>
-          <div style="font-size:22px; font-weight:800; color:#15803d;">${product.display_stock}</div>
         </div>
       </div>` : ``}
       <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
@@ -881,273 +886,6 @@ async function loadLogs(){
   `).join('') || '<tr><td colspan="7" class="empty">Belum ada riwayat</td></tr>';
 }
 
-// ===== TRANSFER STOK GUDANG <-> DISPLAY =====
-let transferProducts = [];
-
-// ===== TRANSFER: variabel state =====
-let transferSelectedProduct = null;
-
-function setupTransferScanListener(){
-  const scanInput = document.getElementById('transferScanInput');
-  if (!scanInput || scanInput.dataset.transferListenerAdded) return;
-
-  let debounce = null;
-  let lastInputTime = 0;
-
-  scanInput.addEventListener('input', () => {
-    const val = scanInput.value.trim();
-    if (!val) { hideTransferSearch(); return; }
-    const now = Date.now();
-    const diff = now - lastInputTime;
-    lastInputTime = now;
-    clearTimeout(debounce);
-
-    if (diff < 50) {
-      // Scanner fisik — tunggu selesai lalu cari exact barcode
-      debounce = setTimeout(() => {
-        const finalVal = scanInput.value.trim();
-        const exact = transferProducts.find(p => String(p.barcode || '').trim() === finalVal);
-        if (exact) pilihProdukTransfer(exact);
-        else showTransferSearch(finalVal);
-      }, 150);
-    } else {
-      // Ketik manual — live search
-      debounce = setTimeout(() => showTransferSearch(val), 300);
-    }
-  });
-
-  scanInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      clearTimeout(debounce);
-      const val = scanInput.value.trim();
-      if (!val) return;
-      const exact = transferProducts.find(p => String(p.barcode || '').trim() === val);
-      if (exact) {
-        pilihProdukTransfer(exact);
-      } else {
-        showTransferSearch(val);
-        setTimeout(() => {
-          const items = document.querySelectorAll('#transferSearchResults .transfer-search-item');
-          if (items.length === 1) items[0].click();
-        }, 300);
-      }
-    }
-    if (e.key === 'Escape') resetTransferForm();
-  });
-
-  document.addEventListener('click', (e) => {
-    const drop = document.getElementById('transferSearchResults');
-    const input = document.getElementById('transferScanInput');
-    if (drop && !drop.contains(e.target) && e.target !== input) hideTransferSearch();
-  });
-
-  scanInput.dataset.transferListenerAdded = 'true';
-}
-
-function showTransferSearch(query){
-  const q = query.toLowerCase().trim();
-  const results = transferProducts.filter(p =>
-    p.name.toLowerCase().includes(q) ||
-    String(p.barcode || '').includes(q) ||
-    String(p.sku || '').toLowerCase().includes(q)
-  ).slice(0, 10);
-
-  const drop = document.getElementById('transferSearchResults');
-  if (!drop) return;
-
-  if (results.length === 0) {
-    drop.style.display = 'block';
-    drop.innerHTML = `<div style="padding:14px; color:#94a3b8; font-size:13px;">❌ Produk tidak ditemukan untuk "<b>${query}</b>"</div>`;
-    return;
-  }
-
-  drop.style.display = 'block';
-  drop.innerHTML = results.map(p => `
-    <div class="transfer-search-item"
-      onclick="pilihProdukTransfer(${JSON.stringify(p).replace(/"/g,'&quot;')})"
-      style="padding:11px 14px; cursor:pointer; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center;"
-      onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background=''">
-      <div>
-        <div style="font-weight:600; font-size:13px; color:#1e293b;">${p.name}</div>
-        <div style="font-size:11px; color:#94a3b8; margin-top:2px;">
-          Barcode: ${p.barcode || '-'} &nbsp;|&nbsp; SKU: ${p.sku || '-'} &nbsp;|&nbsp; ${p.category_name}
-        </div>
-      </div>
-      <div style="font-size:12px; color:#64748b; text-align:right; white-space:nowrap; margin-left:12px;">
-        Office: <b>${p.warehouse_stock}</b><br>Mess: <b>${p.display_stock}</b>
-      </div>
-    </div>
-  `).join('');
-}
-
-function hideTransferSearch(){
-  const drop = document.getElementById('transferSearchResults');
-  if (drop) { drop.style.display = 'none'; drop.innerHTML = ''; }
-}
-
-function pilihProdukTransfer(product){
-  if (typeof product === 'string') product = JSON.parse(product);
-  transferSelectedProduct = product;
-
-  // Isi input dengan nama produk
-  const scanInput = document.getElementById('transferScanInput');
-  if (scanInput) scanInput.value = product.name;
-  hideTransferSearch();
-
-  // Set hidden select supaya submitTransfer tetap bisa baca product_id
-  const sel = document.getElementById('transferProductSelect');
-  if (sel) sel.value = product.id;
-
-  // Render form inline
-  renderTransferForm(product);
-
-  setTimeout(() => {
-    const qty = document.getElementById('transferQty');
-    if (qty) qty.focus();
-  }, 100);
-  if (typeof playBeep === 'function') playBeep();
-}
-
-function renderTransferForm(product){
-  const formEl = document.getElementById('transferInlineForm');
-  if (!formEl) return;
-
-  formEl.style.display = 'block';
-  formEl.innerHTML = `
-    <div style="margin-top:12px; padding:14px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
-      <div style="font-weight:700; font-size:15px; color:#1e293b; margin-bottom:4px;">🛒 ${product.name}</div>
-      <div style="font-size:12px; color:#64748b; margin-bottom:12px;">
-        Barcode: ${product.barcode || '-'} &nbsp;|&nbsp; SKU: ${product.sku || '-'} &nbsp;|&nbsp; Satuan: ${product.unit || 'PCS'}
-      </div>
-      ${currentUser.role === 'admin' ? `
-      <div style="display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
-        <div style="flex:1; min-width:120px; background:#dbeafe; border-radius:8px; padding:10px 14px; text-align:center;">
-          <div style="font-size:11px; color:#1d4ed8; font-weight:600;">📦 STOK OFFICE</div>
-          <div style="font-size:22px; font-weight:800; color:#1e3a8a;">${product.warehouse_stock}</div>
-        </div>
-        <div style="flex:1; min-width:120px; background:#dcfce7; border-radius:8px; padding:10px 14px; text-align:center;">
-          <div style="font-size:11px; color:#16a34a; font-weight:600;">🛒 STOK MESS</div>
-          <div style="font-size:22px; font-weight:800; color:#15803d;">${product.display_stock}</div>
-        </div>
-      </div>` : ''}
-      <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
-        <div style="flex:1; min-width:100px;">
-          <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Jumlah Transfer</label>
-          <input type="number" id="transferQty" min="1" placeholder="0"
-            style="width:100%; padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:18px; font-weight:700; text-align:center;">
-        </div>
-        <div style="flex:2; min-width:180px;">
-          <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Catatan (opsional)</label>
-          <input type="text" id="transferNote" placeholder="Catatan..."
-            style="width:100%; padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px;">
-        </div>
-      </div>
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn btn-primary" onclick="submitTransfer()" style="flex:1; min-width:180px;">🛒 Isi Mess</button>
-        <button class="btn btn-gray" onclick="resetTransferForm()" style="min-width:80px;">✕ Ganti</button>
-      </div>
-    </div>
-  `;
-}
-
-function resetTransferForm(){
-  transferSelectedProduct = null;
-  const scanInput = document.getElementById('transferScanInput');
-  if (scanInput) { scanInput.value = ''; scanInput.focus(); }
-  hideTransferSearch();
-  const formEl = document.getElementById('transferInlineForm');
-  if (formEl) { formEl.style.display = 'none'; formEl.innerHTML = ''; }
-}
-
-// Fungsi lama — tetap ada supaya tidak ada error
-function onTransferProductChange(){}
-
-async function submitTransfer(){
-  const product_id = document.getElementById('transferProductSelect').value;
-  const qty = parseInt(document.getElementById('transferQty').value);
-  const note = document.getElementById('transferNote').value.trim();
-
-  if (!product_id || !transferSelectedProduct)
-    return toast('Pilih produk terlebih dahulu', 'error');
-
-  if (!qty || qty <= 0)
-    return toast('Jumlah harus lebih dari 0', 'error');
-
-  if (qty > transferSelectedProduct.warehouse_stock)
-    return toast(`Stok Office tidak cukup (tersedia: ${transferSelectedProduct.warehouse_stock})`, 'error');
-
-  try {
-    await api('/transfer', 'POST', {
-      product_id,
-      qty,
-      direction: 'to_display',
-      note
-    });
-
-    toast('Stok berhasil dikirim ke Mess');
-    await loadStockPage();
-
-  } catch(e){
-    toast(e.message, 'error');
-  }
-}
-
-// ===== SCANNER KAMERA: TRANSFER =====
-async function startTransferBarcodeScanner(){
-  const reader = document.getElementById('transferReader');
-  if(!reader){ toast('Reader transfer tidak ditemukan', 'error'); return; }
-  reader.style.display = 'block';
-  const scanner = new Html5Qrcode('transferReader');
-  scanner.start(
-    { facingMode: 'environment' },
-    { fps: 20, qrbox: { width: 300, height: 150 }, aspectRatio: 1.7778,
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A,  Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39
-      ]
-    },
-    async (decodedText) => {
-      await scanner.stop();
-      reader.style.display = 'none';
-      const scanInput = document.getElementById('transferScanInput');
-      if (scanInput) {
-        scanInput.value = decodedText;
-        // PENTING: trigger event 'input' agar setupTransferScanListener() mendeteksi nilai baru
-        scanInput.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-      const exact = transferProducts.find(p => String(p.barcode || '').trim() === decodedText.trim());
-      if (exact) pilihProdukTransfer(exact);
-      else {
-        showTransferSearch(decodedText);
-        toast('Barcode tidak ditemukan, coba cari manual', 'error');
-      }
-    },
-    () => {}
-  );
-}
-
-async function loadTransferHistory(){
-  const data = await api('/transfers');
-  const tbody = document.getElementById('transferTable');
-  tbody.innerHTML = data.map(t => `
-    <tr>
-      <td>${t.created_at}</td>
-      <td>${t.product_name}</td>
-      <td>${t.category_name}</td>
-      <td>
-  <span class="pill pill-blue">
-    Office → Mess
-  </span>
-</td>
-      <td>${t.qty}</td>
-      <td>${t.note || '-'}</td>
-      <td>${t.user || '-'}</td>
-    </tr>
-  `).join('') || '<tr><td colspan="7" class="empty">Belum ada riwayat transfer</td></tr>';
-}
-
 // ===== HELPER: nama file laporan dinamis =====
 function formatDateForFilename(dateStr){
   if (!dateStr) return null;
@@ -1248,30 +986,29 @@ async function loadCurrentStock(){
   const data = await api('/current-stock');
   const tbody = document.getElementById('currentStockTable');
   tbody.innerHTML = data.map(p => {
-    const isLow = p.warehouse_stock <= p.warehouse_min || p.display_stock <= p.display_min;
+    const isLow = p.warehouse_stock <= p.warehouse_min;
     let statusHtml = isLow ? '<span class="pill pill-red">Menipis</span>' : '<span class="pill pill-green">Aman</span>';
     if (isLow) {
-      let saran = [];
-      if (p.warehouse_reorder_qty > 0) saran.push(`Order gudang +${p.warehouse_reorder_qty}`);
-      if (p.display_refill_qty > 0) saran.push(`Isi display +${p.display_refill_qty}`);
-      if (saran.length) statusHtml += `<div class="reorder-note">${saran.join('<br>')}</div>`;
+      const reorderQty = Math.max(0, p.warehouse_min - p.warehouse_stock);
+      if (reorderQty > 0) statusHtml += `<div class="reorder-note">Order +${reorderQty}</div>`;
     }
+    const locLabel = p.location === 'mess' ? 'MIMS/Mess' : 'MIOF/Office';
     return `
     <tr>
       <td>${p.name}</td>
       <td>${p.category_name}</td>
+      <td>${locLabel}</td>
       <td class="${p.warehouse_stock <= p.warehouse_min ? 'stock-low' : 'stock-ok'}">${p.warehouse_stock}</td>
-      <td class="${p.display_stock <= p.display_min ? 'stock-low' : 'stock-ok'}">${p.display_stock}</td>
-      <td>${p.total_stock}</td>
       <td>${formatRupiah(p.price)}</td>
       <td>${statusHtml}</td>
     </tr>
   `;
-  }).join('') || '<tr><td colspan="7" class="empty">Belum ada produk</td></tr>';
+  }).join('') || '<tr><td colspan="6" class="empty">Belum ada produk</td></tr>';
 }
 
 // ===== STOCK OPNAME =====
 let opnameProducts = [];
+let opnameProductsAll = [];
 
 // ===== STATE OPNAME =====
 let opnameSelectedProduct = null; // produk yang sedang aktif di form
@@ -1291,20 +1028,18 @@ async function loadOpnamePage(){
     kasirHistoryPanel.style.display = 'none';
     kasirInfo.style.display = 'none';
     adminActions.style.display = '';
-    subtitle.textContent = 'Scan barcode atau ketik nama produk → isi qty → simpan. Approve opname kasir di riwayat bawah.';
+    subtitle.textContent = 'Pilih lokasi, scan barcode atau ketik nama produk → isi qty → simpan. Approve opname kasir di riwayat bawah.';
   } else {
     historyPanel.style.display = 'none';
     kasirHistoryPanel.style.display = 'block';
     kasirInfo.style.display = 'block';
     adminActions.style.display = 'none';
-    subtitle.textContent = 'Scan barcode atau ketik nama produk → isi qty → simpan. Admin akan menyetujui data kamu.';
+    subtitle.textContent = 'Pilih lokasi, scan barcode atau ketik nama produk → isi qty → simpan. Admin akan menyetujui data kamu.';
   }
 
-  // Load semua produk ke cache
-  opnameProducts = await api('/opname/products');
-
-  // Reset form ke kondisi awal (belum pilih produk)
-  resetOpnameForm();
+  // Load semua produk ke cache, lalu filter sesuai lokasi yang dipilih
+  opnameProductsAll = await api('/opname/products');
+  applyOpnameSiteFilter();
 
   // Pasang listener scan input (hanya sekali)
   const scanInput = document.getElementById('scanBarcodeOpname');
@@ -1408,13 +1143,13 @@ function showOpnameDropdown(query){
       style="padding:11px 14px; cursor:pointer; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center;"
       onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background=''">
       <div>
-        <div style="font-weight:600; font-size:13px; color:#1e293b;">${p.name}</div>
+        <div style="font-weight:600; font-size:13px; color:#1e293b;">${p.name} <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; background:${p.location==='mess'?'#dcfce7':'#dbeafe'}; color:${p.location==='mess'?'#15803d':'#1d4ed8'};">${p.location==='mess'?'MIMS/Mess':'MIOF/Office'}</span></div>
         <div style="font-size:11px; color:#94a3b8; margin-top:2px;">
           📦 Barcode: ${p.barcode || '-'} &nbsp;|&nbsp; SKU: ${p.sku || '-'}
         </div>
       </div>
       <div style="font-size:12px; color:#64748b; text-align:right; white-space:nowrap; margin-left:12px;">
-        Office: <b>${p.warehouse_stock}</b><br>Mess: <b>${p.display_stock}</b>
+        Stok: <b>${p.warehouse_stock}</b>
       </div>
     </div>
   `).join('');
@@ -1453,14 +1188,13 @@ function renderOpnameForm(product){
   if (!formEl) return;
 
   // Info stok sistem
-  const officeStok = product.warehouse_stock;
-  const messStok   = product.display_stock;
+  const sysStok = product.warehouse_stock;
 
   formEl.style.display = 'block';
   formEl.innerHTML = `
     <div style="margin-top:14px; padding:14px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
       <!-- Nama produk -->
-      <div style="font-weight:700; font-size:15px; color:#1e293b; margin-bottom:4px;">📦 ${product.name}</div>
+      <div style="font-weight:700; font-size:15px; color:#1e293b; margin-bottom:4px;">📦 ${product.name} <span style="font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; background:${product.location==='mess'?'#dcfce7':'#dbeafe'}; color:${product.location==='mess'?'#15803d':'#1d4ed8'};">${product.location==='mess'?'MIMS/Mess':'MIOF/Office'}</span></div>
       <div style="font-size:12px; color:#64748b; margin-bottom:10px;">
         Barcode: ${product.barcode || '-'} &nbsp;|&nbsp; SKU: ${product.sku || '-'} &nbsp;|&nbsp; Kategori: ${product.category_name || '-'}
       </div>
@@ -1469,23 +1203,10 @@ function renderOpnameForm(product){
       ${isAdmin ? `
       <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
         <div style="flex:1; min-width:120px; background:#dbeafe; border-radius:8px; padding:10px 14px; text-align:center;">
-          <div style="font-size:11px; color:#1d4ed8; font-weight:600;">STOK OFFICE (Sistem)</div>
-          <div style="font-size:22px; font-weight:800; color:#1e3a8a;">${officeStok}</div>
-        </div>
-        <div style="flex:1; min-width:120px; background:#dcfce7; border-radius:8px; padding:10px 14px; text-align:center;">
-          <div style="font-size:11px; color:#16a34a; font-weight:600;">STOK MESS (Sistem)</div>
-          <div style="font-size:22px; font-weight:800; color:#15803d;">${messStok}</div>
+          <div style="font-size:11px; color:#1d4ed8; font-weight:600;">STOK (Sistem)</div>
+          <div style="font-size:22px; font-weight:800; color:#1e3a8a;">${sysStok}</div>
         </div>
       </div>` : ``}
-
-      <!-- Pilih lokasi -->
-      <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
-        <label style="font-size:13px; font-weight:600; color:#475569; white-space:nowrap;">Lokasi Hitung:</label>
-        <select id="opnameLocation" onchange="onLokasiChange()" style="padding:8px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; flex:1; min-width:160px;">
-          <option value="warehouse">MIOF / Gudang</option>
-          <option value="display">MIPL / Mess</option>
-        </select>
-      </div>
 
       <!-- Input qty -->
       <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-start;">
@@ -1521,9 +1242,8 @@ function renderOpnameForm(product){
 // Update preview selisih saat qty diketik
 function onQtyChange(){
   if (currentUser.role !== 'admin') return;
-  const loc = document.getElementById('opnameLocation')?.value;
-  if (!loc || !opnameSelectedProduct) return;
-  const sysStok = loc === 'warehouse' ? opnameSelectedProduct.warehouse_stock : opnameSelectedProduct.display_stock;
+  if (!opnameSelectedProduct) return;
+  const sysStok = opnameSelectedProduct.warehouse_stock;
   const fisik = parseInt(document.getElementById('opnameStockFisik')?.value);
   const preview = document.getElementById('opnamePreview');
   if (!preview) return;
@@ -1534,9 +1254,15 @@ function onQtyChange(){
   else preview.innerHTML = `⚠️ Stok fisik lebih sedikit <b style="color:#dc2626">${selisih}</b> dari sistem.`;
 }
 
-function onLokasiChange(){
-  // Refresh preview selisih saat lokasi diganti
-  onQtyChange();
+// Filter cache produk opname sesuai lokasi yang dipilih (MIOF/Office atau MIMS/Mess)
+function applyOpnameSiteFilter(){
+  const site = document.getElementById('opnameSiteSelect')?.value || 'office';
+  opnameProducts = opnameProductsAll.filter(p => (p.location || 'office') === site);
+  resetOpnameForm();
+}
+
+function onOpnameSiteChange(){
+  applyOpnameSiteFilter();
 }
 
 // Reset form ke kondisi awal (belum pilih produk)
@@ -1558,7 +1284,6 @@ function onOpnameProductChange(){} // tidak dipakai lagi
 async function submitOpname() {
   if (!opnameSelectedProduct) return toast('Scan atau cari produk dulu', 'error');
   const product_id = opnameSelectedProduct.id;
-  const loc = document.getElementById('opnameLocation')?.value || 'warehouse';
   const fisikEl = document.getElementById('opnameStockFisik');
   const stock_fisik = fisikEl ? Number(fisikEl.value) : NaN;
   const note = document.getElementById('opnameNote')?.value.trim() || '';
@@ -1570,14 +1295,19 @@ async function submitOpname() {
   if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...'; }
 
   try {
-    const payload = { product_id, note };
-    if (loc === 'warehouse') payload.stock_fisik_warehouse = stock_fisik;
-    else payload.stock_fisik_display = stock_fisik;
+    const payload = { product_id, note, stock_fisik };
 
     const result = await api('/opname', 'POST', payload);
-    const selisih = result?.results?.[0]?.selisih ?? result?.selisih ?? 0;
-    if (selisih === 0) toast('✅ Opname disimpan, stok sesuai!', 'success');
-    else toast(`✅ Opname disimpan. Selisih: ${selisih > 0 ? '+' : ''}${selisih}`, 'success');
+
+    if (currentUser.role === 'admin') {
+      // Admin boleh lihat selisih karena mereka yang menyetujui/mengelola stok
+      const selisih = result?.selisih ?? 0;
+      if (selisih === 0) toast('✅ Opname disimpan, stok sesuai!', 'success');
+      else toast(`✅ Opname disimpan. Selisih: ${selisih > 0 ? '+' : ''}${selisih}`, 'success');
+    } else {
+      // Kasir tidak boleh lihat info selisih sama sekali — cukup konfirmasi terkirim
+      toast('✅ Data opname terkirim, menunggu persetujuan admin', 'success');
+    }
 
     // Reset form siap scan produk berikutnya
     resetOpnameForm();
@@ -1608,32 +1338,41 @@ async function loadOpnameHistory(){
   if (btnApproveLabel) btnApproveLabel.textContent = `✓ Approve Semua Pending (${pendingCount})`;
 
   tbody.innerHTML = data.map(o => {
-    const statusBadge = o.status === 'approved'
-      ? `<span class="pill pill-green">APPROVED</span>`
-      : o.status === 'rejected'
-        ? `<span class="pill pill-red">DITOLAK</span>`
-        : `<span class="pill" style="background:#fef3c7;color:#d97706;">PENDING ⏳</span>`;
-
-    // Kolom Aksi dihapus — approve/tolak pakai bulk action bar
-
+    // Checkbox — pending aktif, lainnya disabled (tetap ada agar kolom tidak geser)
     const chkInput = o.status === 'pending'
       ? `<input type="checkbox" class="opname-chk" value="${o.id}" onchange="onOpnameChkChange()" style="width:16px;height:16px;cursor:pointer;accent-color:#1a56db;">`
-      : `<input type="checkbox" disabled style="width:16px;height:16px;opacity:.3;">`;
+      : `<input type="checkbox" disabled style="width:16px;height:16px;opacity:.25;">`;
 
     const selisihClass = o.selisih === 0 ? '' : (o.selisih > 0 ? 'type-in' : 'type-out');
     const selisihLabel = o.selisih === 0 ? '0' : (o.selisih > 0 ? '+' + o.selisih : o.selisih);
 
+    // Tombol aksi digabung DALAM td STATUS — sehingga semua baris tetap 9 kolom
+    let statusCell;
+    if (o.status === 'approved') {
+      statusCell = `<span class="pill pill-green">APPROVED</span>`;
+    } else if (o.status === 'rejected') {
+      statusCell = `<span class="pill pill-red">DITOLAK</span>`;
+    } else {
+      statusCell = `
+        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+          <span class="pill" style="background:#fef3c7;color:#d97706;white-space:nowrap;">PENDING ⏳</span>
+          <button class="btn btn-sm btn-green" onclick="approveOpname(${o.id})" style="padding:4px 8px;font-size:11px;">✓ Approve</button>
+          <button class="btn btn-sm btn-gray" onclick="editOpnameQty(${o.id},${o.stock_fisik})" style="padding:4px 8px;font-size:11px;">✏️</button>
+          <button class="btn btn-sm btn-red" onclick="rejectOpname(${o.id})" style="padding:4px 8px;font-size:11px;">✗ Tolak</button>
+        </div>`;
+    }
+
     return `
     <tr>
       <td style="width:44px;min-width:44px;padding:8px 4px;text-align:center;vertical-align:middle;">${chkInput}</td>
-      <td style="font-size:12px; white-space:nowrap;">${o.created_at}</td>
+      <td style="font-size:12px;white-space:nowrap;">${o.created_at}</td>
       <td>${o.user || '-'}</td>
-      <td style="font-weight:600;">${o.product_name}</td>
-      <td>${o.location === 'warehouse' ? 'MIOF' : 'MIPL'}</td>
-      <td><b>${o.stock_fisik}</b></td>
-      <td>${o.stock_system}</td>
-      <td class="${selisihClass}" style="font-weight:700;">${selisihLabel}</td>
-      <td>${statusBadge}</td>
+      <td style="font-weight:600;" title="${o.product_name}">${o.product_name}</td>
+      <td style="font-size:12px;">${o.site === 'mess' ? 'MIMS/Mess' : 'MIOF/Office'}</td>
+      <td style="text-align:center;"><b>${o.stock_fisik}</b></td>
+      <td style="text-align:center;">${o.stock_system}</td>
+      <td class="${selisihClass}" style="font-weight:700;text-align:center;">${selisihLabel}</td>
+      <td>${statusCell}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="9" class="empty">Belum ada riwayat opname</td></tr>';
 
@@ -1711,7 +1450,7 @@ async function loadOpnameKasirHistory(){
       html += `<tr>
         <td style="font-size:12px;">${o.created_at}</td>
         <td>${o.product_name}</td>
-        <td>${o.location === 'warehouse' ? 'MIOF' : 'MIPL'}</td>
+        <td>${o.site === 'mess' ? 'MIMS' : 'MIOF'}</td>
         <td><b>${o.stock_fisik}</b></td>
         <td>${statusBadge}</td>
       </tr>`;
@@ -1965,9 +1704,14 @@ window.onload = () => {
 function findProductByBarcode(barcode){
   barcode = String(barcode || '').trim();
   if (!barcode) return;
-  const exact = stockProducts.find(p => String(p.barcode || '').trim() === barcode);
-  if (exact) {
-    pilihProdukStock(exact);
+  const matches = stockProducts.filter(p => String(p.barcode || '').trim() === barcode);
+  if (matches.length === 1) {
+    pilihProdukStock(matches[0]);
+  } else if (matches.length > 1) {
+    // Barcode sama ada di lebih dari 1 site (MIOF & MIMS) — jangan tebak,
+    // tampilkan pilihan supaya user pilih site yang benar.
+    showStockSearch(barcode);
+    toast('Barcode ini ada di lebih dari 1 site, pilih dari daftar', 'error');
   } else {
     showStockSearch(barcode);
     toast('Barcode tidak ditemukan', 'error');
@@ -2170,20 +1914,28 @@ async function handleOpnameScan(barcode){
   barcode = String(barcode).trim();
   if(!barcode) return;
 
-  // Cari exact match di cache
-  let product = opnameProducts.find(p => String(p.barcode || '').trim() === barcode);
+  const site = document.getElementById('opnameSiteSelect')?.value || 'office';
 
-  if(!product){
-    // Belum ada di cache → fetch ulang
+  // Cari match di cache lokasi yang sedang aktif
+  let matches = opnameProducts.filter(p => String(p.barcode || '').trim() === barcode);
+
+  if(matches.length === 0){
+    // Belum ada di cache lokasi ini → refresh cache global lalu filter ulang ke lokasi aktif
     try {
-      const products = await api('/opname/products');
-      opnameProducts = products;
-      product = products.find(p => String(p.barcode || '').trim() === barcode);
+      opnameProductsAll = await api('/opname/products');
+      applyOpnameSiteFilter();
+      matches = opnameProducts.filter(p => String(p.barcode || '').trim() === barcode);
     } catch(err){ toast(err.message, 'error'); return; }
   }
 
-  if(product){
-    pilihProdukOpname(product);
+  if(matches.length === 1){
+    pilihProdukOpname(matches[0]);
+  } else if(matches.length > 1){
+    // Barcode sama ada di lebih dari 1 site — jangan tebak, minta user pilih.
+    toast('Barcode ini ada di lebih dari 1 site, pilih dari daftar', 'error');
+    const scanInput = document.getElementById('scanBarcodeOpname');
+    if(scanInput) scanInput.value = barcode;
+    showOpnameDropdown(barcode);
   } else {
     toast('Barcode tidak ditemukan: ' + barcode, 'error');
     const scanInput = document.getElementById('scanBarcodeOpname');
