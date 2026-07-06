@@ -761,32 +761,37 @@ app.post('/api/opname', authMiddleware, (req, res) => {
     return res.status(400).json({ error: 'Stok fisik tidak boleh negatif' });
   }
 
-  const prod = db.prepare('SELECT warehouse_stock FROM products WHERE id=?').get(product_id);
+  const prod = db.prepare('SELECT warehouse_stock, display_stock, default_location FROM products WHERE id=?').get(product_id);
   if (!prod) return res.status(404).json({ error: 'Produk tidak ditemukan' });
 
-  const stock_system = prod.warehouse_stock;
+  // Tentukan stok sistem dan kolom DB sesuai lokasi produk
+  const isMess = (prod.default_location === 'mess');
+  const stockCol  = isMess ? 'display_stock'   : 'warehouse_stock';
+  const locLabel  = isMess ? 'Mess (MIMS)'     : 'Office (MIOF)';
+  const locKey    = isMess ? 'mess'             : 'warehouse';
+  const stock_system = isMess ? prod.display_stock : prod.warehouse_stock;
   const selisih = stock_fisik - stock_system;
   const isAdmin = req.user.role === 'admin';
-  // Kasir → pending (stok belum berubah, tunggu approve admin)
-  // Admin → approved langsung, stok langsung berubah
   const status = isAdmin ? 'approved' : 'pending';
 
   db.prepare(`
     INSERT INTO stock_opname (product_id, location, stock_system, stock_fisik, selisih, user, status, approved_by, approved_at)
-    VALUES (?,'warehouse',?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?)
   `).run(
-    product_id, stock_system, stock_fisik, selisih,
+    product_id, locKey, stock_system, stock_fisik, selisih,
     req.user.username, status,
     isAdmin ? req.user.username : null,
     isAdmin ? new Date().toISOString() : null
   );
 
-  // Hanya update stok kalau admin (langsung) atau sudah di-approve
-  if (isAdmin && selisih !== 0) {
-    db.prepare(`UPDATE products SET warehouse_stock=? WHERE id=?`).run(stock_fisik, product_id);
-    const adjType = selisih > 0 ? 'in' : 'out';
+  if (isAdmin) {
+    // Admin SO langsung → selalu set stok ke nilai fisik
+    db.prepare(`UPDATE products SET ${stockCol}=? WHERE id=?`).run(stock_fisik, product_id);
+    const adjType = selisih >= 0 ? 'in' : 'out';
     db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
-      .run(product_id, adjType, Math.abs(selisih), `[OPNAME] ${note || ''} Penyesuaian stok (selisih ${selisih > 0 ? '+' : ''}${selisih})`, req.user.username);
+      .run(product_id, adjType, Math.abs(selisih),
+        `[OPNAME] ${note||''} Stok ${locLabel} diset ke ${stock_fisik} (selisih ${selisih > 0 ? '+' : ''}${selisih})`,
+        req.user.username);
   }
 
   res.json({ ok: true, product_id, stock_system, stock_fisik, selisih, status });
@@ -798,20 +803,24 @@ app.post('/api/opname/:id/approve', authMiddleware, adminOnly, (req, res) => {
   if (!opname) return res.status(404).json({ error: 'Data opname tidak ditemukan' });
   if (opname.status === 'approved') return res.status(400).json({ error: 'Opname ini sudah di-approve' });
 
-  const prod = db.prepare('SELECT warehouse_stock FROM products WHERE id=?').get(opname.product_id);
+  const prod = db.prepare('SELECT warehouse_stock, display_stock, default_location FROM products WHERE id=?').get(opname.product_id);
   if (!prod) return res.status(404).json({ error: 'Produk tidak ditemukan' });
 
-  // Update stok produk
-  if (opname.selisih !== 0) {
-    db.prepare(`UPDATE products SET warehouse_stock=? WHERE id=?`).run(opname.stock_fisik, opname.product_id);
-    const adjType = opname.selisih > 0 ? 'in' : 'out';
-    // "Petugas" di riwayat = yang benar-benar input/hitung fisiknya (opname.user),
-    // BUKAN admin yang approve. Siapa yang approve tetap dicatat di teks catatan.
-    db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
-      .run(opname.product_id, adjType, Math.abs(opname.selisih),
-        `[OPNAME APPROVE] Disetujui oleh ${req.user.username}. Penyesuaian stok (selisih ${opname.selisih > 0 ? '+' : ''}${opname.selisih})`,
-        opname.user);
-  }
+  // Pakai opname.location (lokasi saat SO dibuat), BUKAN default_location produk
+  const stockCol = (opname.location === 'mess' || opname.location === 'display')
+    ? 'display_stock' : 'warehouse_stock';
+
+  // SELALU set ke nilai fisik — meski selisih 0 sekalipun
+  db.prepare(`UPDATE products SET ${stockCol}=? WHERE id=?`).run(opname.stock_fisik, opname.product_id);
+
+  // Hitung ulang selisih pakai stok SAAT approve (bukan saat SO dibuat) supaya akurat
+  const currentStock = stockCol === 'display_stock' ? prod.display_stock : prod.warehouse_stock;
+  const realSelisih = opname.stock_fisik - currentStock;
+  const adjType = realSelisih >= 0 ? 'in' : 'out';
+  db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
+    .run(opname.product_id, adjType, Math.abs(realSelisih),
+      `[OPNAME APPROVE] Disetujui ${req.user.username}. Stok diset ke ${opname.stock_fisik} (selisih ${realSelisih > 0 ? '+' : ''}${realSelisih})`,
+      opname.user);
 
   db.prepare(`UPDATE stock_opname SET status='approved', approved_by=?, approved_at=datetime('now','localtime') WHERE id=?`)
     .run(req.user.username, req.params.id);
