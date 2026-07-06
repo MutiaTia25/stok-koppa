@@ -1744,19 +1744,12 @@ function findProductByBarcode(barcode){
 // - toleransi blur & pantulan cahaya
 // - fps rendah supaya lebih banyak waktu decode per frame
 function getScannerCameraConstraints() {
-  return {
-    facingMode: { ideal: 'environment' },
-    width: { ideal: 1280 },
-    height: { ideal: 720 },
-    advanced: [{
-      focusMode: 'continuous',
-      exposureMode: 'continuous',
-      whiteBalanceMode: 'continuous'
-    }]
-  };
+  // html5-qrcode hanya boleh 1 key — pakai facingMode saja
+  // autofocus diatur manual via forceAutoFocus() setelah kamera aktif
+  return { facingMode: 'environment' };
 }
 
-// Paksa autofocus — Android Chrome, Samsung, Xiaomi, dll
+// Paksa autofocus via track.applyConstraints — Android & sebagian iPhone
 async function forceAutoFocus(videoElement) {
   if (!videoElement) return;
   try {
@@ -1765,20 +1758,16 @@ async function forceAutoFocus(videoElement) {
     const track = stream.getVideoTracks()[0];
     if (!track) return;
     const cap = track.getCapabilities?.() || {};
-    // Toggle manual → continuous supaya kamera refocus ulang
     if (cap.focusMode?.includes('continuous')) {
+      // Toggle manual → continuous supaya kamera refocus
       if (cap.focusMode?.includes('manual')) {
         await track.applyConstraints({ advanced: [{ focusMode: 'manual' }] }).catch(()=>{});
         await new Promise(r => setTimeout(r, 80));
       }
       await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(()=>{});
     }
-    // iPhone Safari — pakai ImageCapture kalau tersedia
-    if (window.ImageCapture) {
-      try {
-        const ic = new ImageCapture(track);
-        await ic.getPhotoCapabilities();
-      } catch(e) {}
+    if (cap.exposureMode?.includes('continuous')) {
+      await track.applyConstraints({ advanced: [{ exposureMode: 'continuous' }] }).catch(()=>{});
     }
   } catch(e) {}
 }
@@ -1792,7 +1781,7 @@ function startFocusInterval(readerId) {
 }
 
 function getScannerConfig() {
-  // Area scan 85% lebar layar — tidak perlu posisi pas banget
+  // Area scan 85% lebar layar — toleran posisi, tidak perlu pas banget
   const vw = Math.min(window.innerWidth, 640);
   const w = Math.round(vw * 0.85);
   const h = Math.round(w * 0.40);
@@ -1844,10 +1833,9 @@ function startBarcodeScanner(){
     },
     () => {}
   ).then(() => {
-    // Mulai interval autofocus setelah kamera aktif
     setTimeout(() => {
-      const video = document.querySelector('#reader video');
-      if (video) forceAutoFocus(video);
+      const v = document.querySelector('#reader video');
+      if (v) forceAutoFocus(v);
       focusInterval = startFocusInterval('reader');
     }, 800);
   }).catch(err => {
@@ -1908,7 +1896,7 @@ async function startProductBarcodeScanner(){
   try {
     await scanner.start(
       getScannerCameraConstraints(),
-      getScannerConfig(280, 120),
+      getScannerConfig(),
       async (decodedText) => {
         // Stop scanner segera setelah barcode terbaca
         try { await scanner.stop(); } catch(e) {}
