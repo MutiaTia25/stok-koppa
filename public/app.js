@@ -1390,9 +1390,10 @@ async function loadOpnameHistory(){
       <td style="text-align:center;"><b>${o.stock_fisik}</b></td>
       <td style="text-align:center;">${o.stock_system}</td>
       <td class="${selisihClass}" style="font-weight:700;text-align:center;">${selisihLabel}</td>
+      <td title="${o.note || ''}">${o.note || '-'}</td>
       <td>${statusCell}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="9" class="empty">Belum ada riwayat opname</td></tr>';
+  }).join('') || '<tr><td colspan="10" class="empty">Belum ada riwayat opname</td></tr>';
 
   // Sync master checkbox
   const masterChk = document.getElementById('selectAllOpname');
