@@ -138,8 +138,11 @@ addColumnIfMissing('products', 'unit', "TEXT DEFAULT 'PCS'");
 
 // ===== MIGRASI: gabung stok Gudang + Mart jadi SATU stok per lokasi =====
 // Aplikasi sekarang cuma bedain 2 LOKASI (MIOF/Office & MIMS/Mess), bukan lagi
-// gudang vs mart di dalam satu lokasi. Aman dijalankan berkali-kali — begitu
-// display_stock sudah 0 semua, penjumlahan berikutnya tidak mengubah apa-apa.
+// gudang vs mart di dalam satu lokasi. SENGAJA dijalankan setiap kali server
+// start (tidak cuma sekali) sebagai jaring pengaman — kalau suatu saat ada kode
+// yang keliru nulis lagi ke display_stock, migrasi ini otomatis menggabungkannya
+// kembali ke warehouse_stock di restart berikutnya. Aman berkali-kali karena
+// begitu display_stock sudah 0, penjumlahan berikutnya tidak mengubah apa-apa.
 db.exec(`UPDATE products SET warehouse_stock = warehouse_stock + display_stock, display_stock = 0 WHERE display_stock != 0`);
 
 // ===== MIGRASI: standarisasi Min 48 / Max 1000 untuk SEMUA produk =====
@@ -772,15 +775,15 @@ app.post('/api/opname', authMiddleware, (req, res) => {
     return res.status(400).json({ error: 'Stok fisik tidak boleh negatif' });
   }
 
-  const prod = db.prepare('SELECT warehouse_stock, display_stock, default_location FROM products WHERE id=?').get(product_id);
+  const prod = db.prepare('SELECT warehouse_stock, warehouse_min, default_location FROM products WHERE id=?').get(product_id);
   if (!prod) return res.status(404).json({ error: 'Produk tidak ditemukan' });
 
-  // Tentukan stok sistem dan kolom DB sesuai lokasi produk
+  // Stok itu SATU angka per lokasi produk (tidak ada lagi split gudang/mart) —
+  // jadi selalu pakai warehouse_stock, siapapun lokasinya (Office atau Mess).
   const isMess = (prod.default_location === 'mess');
-  const stockCol  = isMess ? 'display_stock'   : 'warehouse_stock';
   const locLabel  = isMess ? 'Mess (MIMS)'     : 'Office (MIOF)';
-  const locKey    = isMess ? 'mess'             : 'warehouse';
-  const stock_system = isMess ? prod.display_stock : prod.warehouse_stock;
+  const locKey    = 'warehouse';
+  const stock_system = prod.warehouse_stock;
   const selisih = stock_fisik - stock_system;
   const isAdmin = req.user.role === 'admin';
   const status = isAdmin ? 'approved' : 'pending';
@@ -797,7 +800,7 @@ app.post('/api/opname', authMiddleware, (req, res) => {
 
   if (isAdmin) {
     // Admin SO langsung → selalu set stok ke nilai fisik
-    db.prepare(`UPDATE products SET ${stockCol}=? WHERE id=?`).run(stock_fisik, product_id);
+    db.prepare(`UPDATE products SET warehouse_stock=? WHERE id=?`).run(stock_fisik, product_id);
     const adjType = selisih >= 0 ? 'in' : 'out';
     db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
       .run(product_id, adjType, Math.abs(selisih),
@@ -814,18 +817,14 @@ app.post('/api/opname/:id/approve', authMiddleware, adminOnly, (req, res) => {
   if (!opname) return res.status(404).json({ error: 'Data opname tidak ditemukan' });
   if (opname.status === 'approved') return res.status(400).json({ error: 'Opname ini sudah di-approve' });
 
-  const prod = db.prepare('SELECT warehouse_stock, display_stock, default_location FROM products WHERE id=?').get(opname.product_id);
+  const prod = db.prepare('SELECT warehouse_stock, default_location FROM products WHERE id=?').get(opname.product_id);
   if (!prod) return res.status(404).json({ error: 'Produk tidak ditemukan' });
 
-  // Pakai opname.location (lokasi saat SO dibuat), BUKAN default_location produk
-  const stockCol = (opname.location === 'mess' || opname.location === 'display')
-    ? 'display_stock' : 'warehouse_stock';
-
   // SELALU set ke nilai fisik — meski selisih 0 sekalipun
-  db.prepare(`UPDATE products SET ${stockCol}=? WHERE id=?`).run(opname.stock_fisik, opname.product_id);
+  db.prepare(`UPDATE products SET warehouse_stock=? WHERE id=?`).run(opname.stock_fisik, opname.product_id);
 
   // Hitung ulang selisih pakai stok SAAT approve (bukan saat SO dibuat) supaya akurat
-  const currentStock = stockCol === 'display_stock' ? prod.display_stock : prod.warehouse_stock;
+  const currentStock = prod.warehouse_stock;
   const realSelisih = opname.stock_fisik - currentStock;
   const adjType = realSelisih >= 0 ? 'in' : 'out';
   db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
@@ -874,9 +873,11 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   if (to) { where += ' AND DATE(o.created_at) <= ?'; params.push(to); }
   if (status) { where += ' AND o.status = ?'; params.push(status); }
   const rows = db.prepare(`
-    SELECT p.barcode, p.name as product_name, p.default_location as site, o.location, o.stock_fisik, o.stock_system, o.selisih, o.user, o.created_at, o.status
+    SELECT p.barcode, p.name as product_name, c.name as category_name, p.default_location as site,
+           o.stock_fisik, o.stock_system, o.selisih, o.user, o.created_at, o.status
     FROM stock_opname o
     JOIN products p ON p.id = o.product_id
+    JOIN categories c ON c.id = p.category_id
     ${where}
     ORDER BY o.created_at DESC
   `).all(...params);
@@ -886,8 +887,8 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   sheet.columns = [
     { header: 'Barcode', key: 'barcode', width: 18 },
     { header: 'Nama Produk', key: 'product_name', width: 30 },
+    { header: 'Kategori', key: 'category_name', width: 16 },
     { header: 'Site', key: 'site', width: 10 },
-    { header: 'Tipe Stok', key: 'location', width: 12 },
     { header: 'Qty SO (Fisik)', key: 'stock_fisik', width: 14 },
     { header: 'Stok Sistem', key: 'stock_system', width: 14 },
     { header: 'Selisih', key: 'selisih', width: 10 },
@@ -899,7 +900,6 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   rows.forEach(r => sheet.addRow({
     ...r,
     site: r.site === 'mess' ? 'MIMS/Mess' : 'MIOF/Office',
-    location: r.location === 'warehouse' ? 'Gudang' : 'Mart'
   }));
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="stock-opname.xlsx"');
@@ -1376,7 +1376,7 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
     doc.fillColor(MID_BLUE).font('Helvetica-Bold').fontSize(8.5)
        .text(`Total Transaksi : ${logs.length}`, PAGE_W - MR - 140, curY + 6, { width: 136, align: 'right' });
     doc.fillColor(GRAY_TEXT).font('Helvetica').fontSize(8)
-       .text('Riwayat Stok Gudang (MIOF & MIMS)', PAGE_W - MR - 140, curY + 18, { width: 136, align: 'right' });
+       .text('Riwayat Stok (MIOF & MIMS)', PAGE_W - MR - 140, curY + 18, { width: 136, align: 'right' });
 
     curY += 42;
   }
@@ -1424,7 +1424,7 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
     curY += rowH;
   }
 
-  // ── SECTION 1: Riwayat Stok Gudang (semua site) ────────────
+  // ── SECTION 1: Riwayat Stok (semua site) ────────────
   sectionTitle('📦  RIWAYAT STOK MASUK / KELUAR  —  GUDANG (MIOF & MIMS)');
 
   const logsColDef = [
