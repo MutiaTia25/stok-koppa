@@ -132,6 +132,7 @@ addColumnIfMissing('stock_opname', 'location', `TEXT NOT NULL DEFAULT 'warehouse
 addColumnIfMissing('stock_opname','status',"TEXT DEFAULT 'pending'");
 addColumnIfMissing('stock_opname','approved_by','TEXT');
 addColumnIfMissing('stock_opname','approved_at','TEXT');
+addColumnIfMissing('stock_opname','note','TEXT');
 addColumnIfMissing('products', 'barcode', 'TEXT');
 addColumnIfMissing('products','default_location',"TEXT NOT NULL DEFAULT 'office'");
 addColumnIfMissing('products', 'unit', "TEXT DEFAULT 'PCS'");
@@ -724,7 +725,7 @@ app.get('/api/opname', authMiddleware, (req, res) => {
   let sql = `
     SELECT o.id, o.product_id, p.name as product_name, c.name as category_name,
            p.default_location as site, o.location, o.stock_system, o.stock_fisik, o.selisih, o.user, o.created_at,
-           o.status, o.approved_by, o.approved_at
+           o.status, o.approved_by, o.approved_at, o.note
     FROM stock_opname o
     JOIN products p ON p.id = o.product_id
     JOIN categories c ON c.id = p.category_id
@@ -789,13 +790,14 @@ app.post('/api/opname', authMiddleware, (req, res) => {
   const status = isAdmin ? 'approved' : 'pending';
 
   db.prepare(`
-    INSERT INTO stock_opname (product_id, location, stock_system, stock_fisik, selisih, user, status, approved_by, approved_at)
-    VALUES (?,?,?,?,?,?,?,?,?)
+    INSERT INTO stock_opname (product_id, location, stock_system, stock_fisik, selisih, user, status, approved_by, approved_at, note)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
   `).run(
     product_id, locKey, stock_system, stock_fisik, selisih,
     req.user.username, status,
     isAdmin ? req.user.username : null,
-    isAdmin ? new Date().toISOString() : null
+    isAdmin ? new Date().toISOString() : null,
+    note || ''
   );
 
   if (isAdmin) {
@@ -829,7 +831,7 @@ app.post('/api/opname/:id/approve', authMiddleware, adminOnly, (req, res) => {
   const adjType = realSelisih >= 0 ? 'in' : 'out';
   db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
     .run(opname.product_id, adjType, Math.abs(realSelisih),
-      `[OPNAME APPROVE] Disetujui ${req.user.username}. Stok diset ke ${opname.stock_fisik} (selisih ${realSelisih > 0 ? '+' : ''}${realSelisih})`,
+      `[OPNAME APPROVE] Disetujui ${req.user.username}. Stok diset ke ${opname.stock_fisik} (selisih ${realSelisih > 0 ? '+' : ''}${realSelisih})${opname.note ? ' — Catatan: ' + opname.note : ''}`,
       opname.user);
 
   db.prepare(`UPDATE stock_opname SET status='approved', approved_by=?, approved_at=datetime('now','localtime') WHERE id=?`)
@@ -874,7 +876,7 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   if (status) { where += ' AND o.status = ?'; params.push(status); }
   const rows = db.prepare(`
     SELECT p.barcode, p.name as product_name, c.name as category_name, p.default_location as site,
-           o.stock_fisik, o.stock_system, o.selisih, o.user, o.created_at, o.status
+           o.stock_fisik, o.stock_system, o.selisih, o.user, o.created_at, o.status, o.note
     FROM stock_opname o
     JOIN products p ON p.id = o.product_id
     JOIN categories c ON c.id = p.category_id
@@ -892,6 +894,7 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
     { header: 'Qty SO (Fisik)', key: 'stock_fisik', width: 14 },
     { header: 'Stok Sistem', key: 'stock_system', width: 14 },
     { header: 'Selisih', key: 'selisih', width: 10 },
+    { header: 'Catatan', key: 'note', width: 25 },
     { header: 'Petugas', key: 'user', width: 15 },
     { header: 'Waktu', key: 'created_at', width: 20 },
     { header: 'Status', key: 'status', width: 12 },
@@ -900,6 +903,7 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   rows.forEach(r => sheet.addRow({
     ...r,
     site: r.site === 'mess' ? 'MIMS/Mess' : 'MIOF/Office',
+    note: r.note || '-',
   }));
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="stock-opname.xlsx"');
@@ -1152,7 +1156,7 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
   const logs = db.prepare(sqlLogs + ` ORDER BY l.created_at DESC`).all(...p1);
 
   let sqlOp = `SELECT o.created_at, p.name as product_name, c.name as category_name, p.default_location as site,
-    o.stock_fisik, o.stock_system, o.selisih, o.user, o.status
+    o.stock_fisik, o.stock_system, o.selisih, o.user, o.status, o.note
     FROM stock_opname o JOIN products p ON p.id=o.product_id JOIN categories c ON c.id=p.category_id WHERE 1=1`;
   const p3 = [];
   if (from) { sqlOp += ` AND date(o.created_at) >= date(?)`; p3.push(from); }
@@ -1187,7 +1191,7 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
   function secTitle(text, bg) {
     sh.addRow([]);
     const r = sh.addRow([text]);
-    sh.mergeCells(`A${r.number}:H${r.number}`);
+    sh.mergeCells(`A${r.number}:I${r.number}`);
     r.getCell(1).font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
     r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
     r.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
@@ -1198,7 +1202,7 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
   sh.columns = [
     {key:'a',width:22},{key:'b',width:38},{key:'c',width:16},
     {key:'d',width:18},{key:'e',width:12},{key:'f',width:14},
-    {key:'g',width:28},{key:'h',width:14},
+    {key:'g',width:28},{key:'h',width:14},{key:'i',width:14},
   ];
 
   sh.mergeCells('A1:H1');
@@ -1216,11 +1220,11 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
   s2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F0FE' } };
   sh.getRow(2).height = 18;
 
-  secTitle(`📦  STOK MASUK / KELUAR   |   Total: ${logs.length} transaksi`, 'FF1A56DB');
+  secTitle(`STOK MASUK / KELUAR   |   Total: ${logs.length} transaksi`, 'FF1A56DB');
   styleHdr(sh.addRow(['Waktu','Produk','Kategori','Site','Tipe','Jumlah','Catatan','Petugas']),
     ['Waktu','Produk','Kategori','Site','Tipe','Jumlah','Catatan','Petugas'], 'FF1A56DB');
   if (logs.length === 0) {
-    const r = sh.addRow(['Tidak ada data']); sh.mergeCells(`A${r.number}:H${r.number}`);
+    const r = sh.addRow(['Tidak ada data']); sh.mergeCells(`A${r.number}:I${r.number}`);
     r.getCell(1).alignment={horizontal:'center'}; r.getCell(1).font={italic:true,color:{argb:'FF94A3B8'}};
   } else {
     logs.forEach((item, idx) => {
@@ -1232,11 +1236,11 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
     });
   }
 
-  secTitle(`📋  STOCK OPNAME   |   Total: ${opnames.length} data`, 'FF7C3AED');
-  styleHdr(sh.addRow(['Waktu','Produk','Kategori','Site','Qty Fisik','Stok Sistem','Selisih','Status']),
-    ['Waktu','Produk','Kategori','Site','Qty Fisik','Stok Sistem','Selisih','Status'], 'FF7C3AED');
+  secTitle(`STOCK OPNAME   |   Total: ${opnames.length} data`, 'FF7C3AED');
+  styleHdr(sh.addRow(['Waktu','Produk','Kategori','Site','Qty Fisik','Stok Sistem','Selisih','Catatan','Status']),
+    ['Waktu','Produk','Kategori','Site','Qty Fisik','Stok Sistem','Selisih','Catatan','Status'], 'FF7C3AED');
   if (opnames.length === 0) {
-    const r = sh.addRow(['Tidak ada data']); sh.mergeCells(`A${r.number}:H${r.number}`);
+    const r = sh.addRow(['Tidak ada data']); sh.mergeCells(`A${r.number}:I${r.number}`);
     r.getCell(1).alignment={horizontal:'center'}; r.getCell(1).font={italic:true,color:{argb:'FF94A3B8'}};
   } else {
     opnames.forEach((item, idx) => {
@@ -1244,11 +1248,11 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
       const stLabel = item.status==='approved'?'APPROVED':item.status==='rejected'?'DITOLAK':'PENDING';
       const row = sh.addRow([item.created_at, item.product_name, item.category_name,
         item.site==='mess'?'MIMS':'MIOF',
-        item.stock_fisik, item.stock_system, selisih, stLabel]);
-      styleDat(row, idx, 8);
+        item.stock_fisik, item.stock_system, selisih, item.note || '-', stLabel]);
+      styleDat(row, idx, 9);
       [5,6,7].forEach(c => row.getCell(c).alignment={horizontal:'center'});
       if (selisih!==0) row.getCell(7).font={bold:true,size:9.5,color:{argb:selisih<0?'FFE02424':'FF0F9B52'}};
-      row.getCell(8).font={bold:true,size:9.5,color:{argb:item.status==='approved'?'FF0F9B52':item.status==='rejected'?'FFE02424':'FFD97706'}};
+      row.getCell(9).font={bold:true,size:9.5,color:{argb:item.status==='approved'?'FF0F9B52':item.status==='rejected'?'FFE02424':'FFD97706'}};
     });
   }
 
@@ -1425,7 +1429,7 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
   }
 
   // ── SECTION 1: Riwayat Stok (semua site) ────────────
-  sectionTitle('📦  RIWAYAT STOK MASUK / KELUAR  —  GUDANG (MIOF & MIMS)');
+  sectionTitle('RIWAYAT STOK MASUK / KELUAR — MIOF & MIMS');
 
   const logsColDef = [
     { label: 'WAKTU',    x:  0,   w: 98,  align: 'left' },
@@ -1473,7 +1477,7 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
 
   // ── SECTION 2: Stok Saat Ini ──────────────────────────────
   checkPageBreak(40);
-  sectionTitle('📊  KONDISI STOK SAAT INI', DARK_BLUE);
+  sectionTitle('KONDISI STOK SAAT INI', DARK_BLUE);
 
   const stColDef = [
     { label: 'PRODUK',    x:   0, w: 175, align: 'left' },
