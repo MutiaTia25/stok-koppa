@@ -1165,9 +1165,10 @@ function showOpnameDropdown(query){
           Barcode: ${p.barcode || '-'} &nbsp;|&nbsp; SKU: ${p.sku || '-'}
         </div>
       </div>
+      ${currentUser.role === 'admin' ? `
       <div style="font-size:12px; color:#64748b; text-align:right; white-space:nowrap; margin-left:12px;">
         Stok: <b>${p.warehouse_stock}</b>
-      </div>
+      </div>` : ''}
     </div>
   `).join('');
 }
