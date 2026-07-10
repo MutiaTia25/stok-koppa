@@ -740,9 +740,10 @@ function showStockSearch(query){
           Barcode: ${p.barcode || '-'} &nbsp;|&nbsp; SKU: ${p.sku || '-'} &nbsp;|&nbsp; ${p.category_name}
         </div>
       </div>
+      ${currentUser.role === 'admin' ? `
       <div style="font-size:12px; color:#64748b; text-align:right; white-space:nowrap; margin-left:12px;">
         Stok: <b>${p.warehouse_stock}</b>
-      </div>
+      </div>` : ''}
     </div>
   `).join('');
 }
@@ -1179,14 +1180,25 @@ function hideOpnameDropdown(){
 }
 
 // Dipanggil saat user klik hasil dropdown ATAU exact match barcode
-function pilihProdukOpname(product){
+let opnamePendingEntry = null; // entri SO pending yg sudah ada buat produk yg lagi dipilih (kalau ada)
+
+async function pilihProdukOpname(product){
   if (typeof product === 'string') product = JSON.parse(product);
   opnameSelectedProduct = product;
+  opnamePendingEntry = null;
 
   // Isi input scan dengan nama produk
   const scanInput = document.getElementById('scanBarcodeOpname');
   if (scanInput) scanInput.value = product.name;
   hideOpnameDropdown();
+
+  // Cek dulu apakah produk ini sudah pernah di-SO tapi belum di-approve admin —
+  // kalau ada, tawarkan buat nambah/ganti qty-nya, bukan bikin entri baru terpisah.
+  try {
+    opnamePendingEntry = await api('/opname/check-pending/' + product.id);
+  } catch (e) {
+    opnamePendingEntry = null;
+  }
 
   // Render form inline langsung di bawah input scan
   renderOpnameForm(product);
@@ -1207,6 +1219,8 @@ function renderOpnameForm(product){
 
   // Info stok sistem
   const sysStok = product.warehouse_stock;
+  const pending = opnamePendingEntry;
+  const prefillQty = pending ? pending.stock_fisik : '';
 
   formEl.style.display = 'block';
   formEl.innerHTML = `
@@ -1216,6 +1230,17 @@ function renderOpnameForm(product){
       <div style="font-size:12px; color:#64748b; margin-bottom:10px;">
         Barcode: ${product.barcode || '-'} &nbsp;|&nbsp; SKU: ${product.sku || '-'} &nbsp;|&nbsp; Kategori: ${product.category_name || '-'}
       </div>
+
+      ${pending ? `
+      <div style="background:#fef9c3; border:1px solid #fde68a; border-radius:8px; padding:10px 14px; margin-bottom:12px;">
+        <div style="font-weight:700; font-size:12.5px; color:#92400e;">Produk ini sudah pernah di-SO, masih menunggu persetujuan admin</div>
+        <div style="font-size:12px; color:#78350f; margin-top:3px;">
+          Qty yang sudah diinput sebelumnya: <b>${pending.stock_fisik}</b>${isAdmin ? ` (oleh ${pending.user})` : ''}
+        </div>
+        <div style="font-size:11.5px; color:#a16207; margin-top:4px;">
+          Qty di bawah sudah diisi otomatis dari input sebelumnya. Kalau nemu tambahan produk lagi, pakai kotak "Tambah Ditemukan Lagi". Kalau mau ganti total, edit langsung angkanya.
+        </div>
+      </div>` : ''}
 
       <!-- Info stok sistem — hanya admin yang melihat stok sistem -->
       ${isAdmin ? `
@@ -1227,34 +1252,52 @@ function renderOpnameForm(product){
       </div>` : ``}
 
       <!-- Input qty -->
-      <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-start;">
-        <div style="flex:1; min-width:140px;">
-          <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Qty Hasil Hitung Fisik</label>
-          <input type="number" id="opnameStockFisik" min="0" placeholder="0"
-            oninput="onQtyChange()"
-            style="width:100%; padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:18px; font-weight:700; text-align:center;">
-        </div>
-        <div style="flex:2; min-width:180px;">
-          <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Catatan (opsional)</label>
-          <input type="text" id="opnameNote" placeholder="Catatan..."
-            style="width:100%; padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px;">
-        </div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Qty Hasil Hitung Fisik</label>
+        <input type="number" id="opnameStockFisik" min="0" placeholder="0" value="${prefillQty}"
+          oninput="onQtyChange()"
+          style="width:100%; padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:18px; font-weight:700; text-align:center;">
       </div>
+
+      ${pending ? `
+      <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:12px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:140px;">
+          <label style="font-size:11.5px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Tambah Ditemukan Lagi</label>
+          <input type="number" id="opnameAddMore" min="0" placeholder="Contoh: 3"
+            style="width:100%; padding:8px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px;">
+        </div>
+        <button type="button" class="btn btn-gray btn-sm" onclick="addMoreToOpnameQty()">Tambahkan ke Qty</button>
+      </div>` : ''}
 
       <!-- Preview selisih (admin) -->
       <div id="opnamePreview" style="font-size:13px; margin-bottom:10px; min-height:20px;"></div>
 
       <!-- Tombol -->
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button id="btnSubmitOpname" class="btn btn-primary" onclick="submitOpname()" style="flex:1; min-width:140px;">Simpan Opname</button>
+        <button id="btnSubmitOpname" class="btn btn-primary" onclick="submitOpname()" style="flex:1; min-width:140px;">${pending ? 'Update SO Ini' : 'Simpan Opname'}</button>
         <button class="btn btn-gray" onclick="resetOpnameForm()" style="min-width:100px;">Ganti Produk</button>
       </div>
 
       ${!isAdmin ? `<div style="margin-top:10px; padding:8px 12px; background:#eff6ff; border-radius:8px; font-size:12px; color:#1d4ed8;">
-        ℹData dikirim ke admin untuk disetujui sebelum stok diperbarui.
+        Data dikirim ke admin untuk disetujui sebelum stok diperbarui.
       </div>` : ''}
     </div>
   `;
+  if (pending) onQtyChange();
+}
+
+// Ambil angka tambahan yang ditemukan lagi, jumlahkan ke qty yang sudah diisi
+function addMoreToOpnameQty(){
+  const addEl = document.getElementById('opnameAddMore');
+  const qtyEl = document.getElementById('opnameStockFisik');
+  if (!addEl || !qtyEl) return;
+  const addVal = parseInt(addEl.value);
+  if (isNaN(addVal) || addVal <= 0) return toast('Isi jumlah tambahan yang valid', 'error');
+  const current = parseInt(qtyEl.value) || 0;
+  qtyEl.value = current + addVal;
+  addEl.value = '';
+  onQtyChange();
+  toast(`+${addVal} ditambahkan ke qty`, 'success');
 }
 
 // Update preview selisih saat qty diketik
@@ -1286,6 +1329,7 @@ function onOpnameSiteChange(){
 // Reset form ke kondisi awal (belum pilih produk)
 function resetOpnameForm(){
   opnameSelectedProduct = null;
+  opnamePendingEntry = null;
   const scanInput = document.getElementById('scanBarcodeOpname');
   if (scanInput) { scanInput.value = ''; scanInput.focus(); }
   hideOpnameDropdown();
@@ -1304,7 +1348,6 @@ async function submitOpname() {
   const product_id = opnameSelectedProduct.id;
   const fisikEl = document.getElementById('opnameStockFisik');
   const stock_fisik = fisikEl ? Number(fisikEl.value) : NaN;
-  const note = document.getElementById('opnameNote')?.value.trim() || '';
 
   if (isNaN(stock_fisik) || fisikEl?.value === '') return toast('Isi qty hasil hitung fisik dulu', 'error');
   if (stock_fisik < 0) return toast('Qty tidak boleh negatif', 'error');
@@ -1313,18 +1356,21 @@ async function submitOpname() {
   if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...'; }
 
   try {
-    const payload = { product_id, note, stock_fisik };
+    const payload = { product_id, stock_fisik };
+    if (opnamePendingEntry) payload.update_opname_id = opnamePendingEntry.id;
 
     const result = await api('/opname', 'POST', payload);
+    const wasUpdate = !!result?.updated;
 
     if (currentUser.role === 'admin') {
       // Admin boleh lihat selisih karena mereka yang menyetujui/mengelola stok
       const selisih = result?.selisih ?? 0;
-      if (selisih === 0) toast('Opname disimpan, stok sesuai!', 'success');
-      else toast(`Opname disimpan. Selisih: ${selisih > 0 ? '+' : ''}${selisih}`, 'success');
+      const prefix = wasUpdate ? 'SO diperbarui.' : 'Opname disimpan.';
+      if (selisih === 0) toast(`${prefix} Stok sesuai!`, 'success');
+      else toast(`${prefix} Selisih: ${selisih > 0 ? '+' : ''}${selisih}`, 'success');
     } else {
       // Kasir tidak boleh lihat info selisih sama sekali — cukup konfirmasi terkirim
-      toast('Data opname terkirim, menunggu persetujuan admin', 'success');
+      toast(wasUpdate ? 'Qty SO berhasil diperbarui, menunggu persetujuan admin' : 'Data opname terkirim, menunggu persetujuan admin', 'success');
     }
 
     // Reset form siap scan produk berikutnya
@@ -1390,10 +1436,9 @@ async function loadOpnameHistory(){
       <td style="text-align:center;"><b>${o.stock_fisik}</b></td>
       <td style="text-align:center;">${o.stock_system}</td>
       <td class="${selisihClass}" style="font-weight:700;text-align:center;">${selisihLabel}</td>
-      <td title="${o.note || ''}">${o.note || '-'}</td>
       <td>${statusCell}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="10" class="empty">Belum ada riwayat opname</td></tr>';
+  }).join('') || '<tr><td colspan="9" class="empty">Belum ada riwayat opname</td></tr>';
 
   // Sync master checkbox
   const masterChk = document.getElementById('selectAllOpname');
