@@ -510,15 +510,6 @@ tbody tr:hover td { background: #f9fafb; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Catatan column: same treatment — long free-text notes get truncated,
-   full text still available via title tooltip on hover */
-#opnameHistoryTable td:nth-child(9) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-muted);
-  font-size: 12px;
-}
 /* Status/Aksi column: let approve/edit/tolak buttons wrap onto their own
    lines within their fixed column instead of pushing later columns */
 #opnameHistoryTable td:last-child,
@@ -1177,21 +1168,19 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
             <table id="opnameHistoryTable">
               <colgroup>
                 <col style="width:44px;">
-                <col style="width:110px;">
+                <col style="width:120px;">
+                <col style="width:100px;">
+                <col style="width:22%;">
+                <col style="width:100px;">
                 <col style="width:90px;">
-                <col style="width:20%;">
                 <col style="width:90px;">
                 <col style="width:80px;">
-                <col style="width:80px;">
-                <col style="width:70px;">
-                <col style="width:160px;">
-                <col style="width:210px;">
+                <col style="width:230px;">
               </colgroup>
               <thead><tr>
                 <th style="padding:8px 4px;text-align:center;"><input type="checkbox" id="selectAllOpname" onchange="toggleSelectAllOpname(this)" title="Pilih semua pending" style="width:16px;height:16px;cursor:pointer;"></th>
                 <th>Waktu</th><th>Petugas</th><th>Produk</th><th>Lokasi</th>
                 <th>Stok Fisik</th><th>Stok Sistem</th><th>Selisih</th>
-                <th>Catatan</th>
                 <th>Status</th>
               </tr></thead>
               <tbody id="opnameTable"></tbody>
