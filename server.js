@@ -725,7 +725,7 @@ app.get('/api/opname', authMiddleware, (req, res) => {
   let sql = `
     SELECT o.id, o.product_id, p.name as product_name, c.name as category_name,
            p.default_location as site, o.location, o.stock_system, o.stock_fisik, o.selisih, o.user, o.created_at,
-           o.status, o.approved_by, o.approved_at, o.note
+           o.status, o.approved_by, o.approved_at
     FROM stock_opname o
     JOIN products p ON p.id = o.product_id
     JOIN categories c ON c.id = p.category_id
@@ -739,9 +739,24 @@ app.get('/api/opname', authMiddleware, (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// ===== CEK APAKAH PRODUK INI SUDAH ADA SO PENDING (BELUM DI-APPROVE) =====
+// Dipakai waktu scan/pilih produk di halaman Opname — supaya kalau produk yang
+// sama sudah pernah di-SO tapi belum di-approve admin, kasir/admin bisa lihat
+// dan TAMBAH/GANTI qty-nya, bukan bikin entri SO baru yang terpisah/duplikat.
+app.get('/api/opname/check-pending/:productId', authMiddleware, (req, res) => {
+  const row = db.prepare(`
+    SELECT id, product_id, stock_system, stock_fisik, selisih, user, created_at
+    FROM stock_opname
+    WHERE product_id = ? AND status = 'pending'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(req.params.productId);
+  res.json(row || null);
+});
+
 app.post('/api/opname', authMiddleware, (req, res) => {
   let {
-    product_id, stock_fisik, note,
+    product_id, stock_fisik, update_opname_id,
     new_product_name, new_product_category_id, new_product_sku, new_product_barcode, new_product_price, new_product_location
   } = req.body;
 
@@ -789,16 +804,36 @@ app.post('/api/opname', authMiddleware, (req, res) => {
   const isAdmin = req.user.role === 'admin';
   const status = isAdmin ? 'approved' : 'pending';
 
-  db.prepare(`
-    INSERT INTO stock_opname (product_id, location, stock_system, stock_fisik, selisih, user, status, approved_by, approved_at, note)
-    VALUES (?,?,?,?,?,?,?,?,?,?)
-  `).run(
-    product_id, locKey, stock_system, stock_fisik, selisih,
-    req.user.username, status,
-    isAdmin ? req.user.username : null,
-    isAdmin ? new Date().toISOString() : null,
-    note || ''
-  );
+  // Kalau ini update dari SO pending yang sudah ada (produk sama, belum di-approve),
+  // UPDATE baris itu saja — supaya gak ada entri SO ganda buat produk yang sama.
+  let existingPending = null;
+  if (update_opname_id) {
+    existingPending = db.prepare(`SELECT id FROM stock_opname WHERE id=? AND product_id=? AND status='pending'`)
+      .get(update_opname_id, product_id);
+  }
+
+  if (existingPending) {
+    db.prepare(`
+      UPDATE stock_opname
+      SET stock_system=?, stock_fisik=?, selisih=?, user=?, created_at=datetime('now','localtime'),
+          status=?, approved_by=?, approved_at=?
+      WHERE id=?
+    `).run(
+      stock_system, stock_fisik, selisih, req.user.username,
+      status, isAdmin ? req.user.username : null, isAdmin ? new Date().toISOString() : null,
+      existingPending.id
+    );
+  } else {
+    db.prepare(`
+      INSERT INTO stock_opname (product_id, location, stock_system, stock_fisik, selisih, user, status, approved_by, approved_at)
+      VALUES (?,?,?,?,?,?,?,?,?)
+    `).run(
+      product_id, locKey, stock_system, stock_fisik, selisih,
+      req.user.username, status,
+      isAdmin ? req.user.username : null,
+      isAdmin ? new Date().toISOString() : null
+    );
+  }
 
   if (isAdmin) {
     // Admin SO langsung → selalu set stok ke nilai fisik
@@ -806,11 +841,11 @@ app.post('/api/opname', authMiddleware, (req, res) => {
     const adjType = selisih >= 0 ? 'in' : 'out';
     db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
       .run(product_id, adjType, Math.abs(selisih),
-        `[OPNAME] ${note||''} Stok ${locLabel} diset ke ${stock_fisik} (selisih ${selisih > 0 ? '+' : ''}${selisih})`,
+        `[OPNAME] Stok ${locLabel} diset ke ${stock_fisik} (selisih ${selisih > 0 ? '+' : ''}${selisih})`,
         req.user.username);
   }
 
-  res.json({ ok: true, product_id, stock_system, stock_fisik, selisih, status });
+  res.json({ ok: true, product_id, stock_system, stock_fisik, selisih, status, updated: !!existingPending });
 });
 
 // ===== APPROVE OPNAME (ADMIN) =====
@@ -831,7 +866,7 @@ app.post('/api/opname/:id/approve', authMiddleware, adminOnly, (req, res) => {
   const adjType = realSelisih >= 0 ? 'in' : 'out';
   db.prepare(`INSERT INTO stock_logs (product_id,type,qty,note,user) VALUES (?,?,?,?,?)`)
     .run(opname.product_id, adjType, Math.abs(realSelisih),
-      `[OPNAME APPROVE] Disetujui ${req.user.username}. Stok diset ke ${opname.stock_fisik} (selisih ${realSelisih > 0 ? '+' : ''}${realSelisih})${opname.note ? ' — Catatan: ' + opname.note : ''}`,
+      `[OPNAME APPROVE] Disetujui ${req.user.username}. Stok diset ke ${opname.stock_fisik} (selisih ${realSelisih > 0 ? '+' : ''}${realSelisih})`,
       opname.user);
 
   db.prepare(`UPDATE stock_opname SET status='approved', approved_by=?, approved_at=datetime('now','localtime') WHERE id=?`)
@@ -876,7 +911,7 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   if (status) { where += ' AND o.status = ?'; params.push(status); }
   const rows = db.prepare(`
     SELECT p.barcode, p.name as product_name, c.name as category_name, p.default_location as site,
-           o.stock_fisik, o.stock_system, o.selisih, o.user, o.created_at, o.status, o.note
+           o.stock_fisik, o.stock_system, o.selisih, o.user, o.created_at, o.status
     FROM stock_opname o
     JOIN products p ON p.id = o.product_id
     JOIN categories c ON c.id = p.category_id
@@ -894,7 +929,6 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
     { header: 'Qty SO (Fisik)', key: 'stock_fisik', width: 14 },
     { header: 'Stok Sistem', key: 'stock_system', width: 14 },
     { header: 'Selisih', key: 'selisih', width: 10 },
-    { header: 'Catatan', key: 'note', width: 25 },
     { header: 'Petugas', key: 'user', width: 15 },
     { header: 'Waktu', key: 'created_at', width: 20 },
     { header: 'Status', key: 'status', width: 12 },
@@ -903,7 +937,6 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   rows.forEach(r => sheet.addRow({
     ...r,
     site: r.site === 'mess' ? 'MIMS/Mess' : 'MIOF/Office',
-    note: r.note || '-',
   }));
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="stock-opname.xlsx"');
@@ -1156,7 +1189,7 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
   const logs = db.prepare(sqlLogs + ` ORDER BY l.created_at DESC`).all(...p1);
 
   let sqlOp = `SELECT o.created_at, p.name as product_name, c.name as category_name, p.default_location as site,
-    o.stock_fisik, o.stock_system, o.selisih, o.user, o.status, o.note
+    o.stock_fisik, o.stock_system, o.selisih, o.user, o.status
     FROM stock_opname o JOIN products p ON p.id=o.product_id JOIN categories c ON c.id=p.category_id WHERE 1=1`;
   const p3 = [];
   if (from) { sqlOp += ` AND date(o.created_at) >= date(?)`; p3.push(from); }
@@ -1237,10 +1270,10 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
   }
 
   secTitle(`STOCK OPNAME   |   Total: ${opnames.length} data`, 'FF7C3AED');
-  styleHdr(sh.addRow(['Waktu','Produk','Kategori','Site','Qty Fisik','Stok Sistem','Selisih','Catatan','Status']),
-    ['Waktu','Produk','Kategori','Site','Qty Fisik','Stok Sistem','Selisih','Catatan','Status'], 'FF7C3AED');
+  styleHdr(sh.addRow(['Waktu','Produk','Kategori','Site','Qty Fisik','Stok Sistem','Selisih','Status']),
+    ['Waktu','Produk','Kategori','Site','Qty Fisik','Stok Sistem','Selisih','Status'], 'FF7C3AED');
   if (opnames.length === 0) {
-    const r = sh.addRow(['Tidak ada data']); sh.mergeCells(`A${r.number}:I${r.number}`);
+    const r = sh.addRow(['Tidak ada data']); sh.mergeCells(`A${r.number}:H${r.number}`);
     r.getCell(1).alignment={horizontal:'center'}; r.getCell(1).font={italic:true,color:{argb:'FF94A3B8'}};
   } else {
     opnames.forEach((item, idx) => {
@@ -1248,11 +1281,11 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
       const stLabel = item.status==='approved'?'APPROVED':item.status==='rejected'?'DITOLAK':'PENDING';
       const row = sh.addRow([item.created_at, item.product_name, item.category_name,
         item.site==='mess'?'MIMS':'MIOF',
-        item.stock_fisik, item.stock_system, selisih, item.note || '-', stLabel]);
-      styleDat(row, idx, 9);
+        item.stock_fisik, item.stock_system, selisih, stLabel]);
+      styleDat(row, idx, 8);
       [5,6,7].forEach(c => row.getCell(c).alignment={horizontal:'center'});
       if (selisih!==0) row.getCell(7).font={bold:true,size:9.5,color:{argb:selisih<0?'FFE02424':'FF0F9B52'}};
-      row.getCell(9).font={bold:true,size:9.5,color:{argb:item.status==='approved'?'FF0F9B52':item.status==='rejected'?'FFE02424':'FFD97706'}};
+      row.getCell(8).font={bold:true,size:9.5,color:{argb:item.status==='approved'?'FF0F9B52':item.status==='rejected'?'FFE02424':'FFD97706'}};
     });
   }
 
