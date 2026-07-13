@@ -895,13 +895,14 @@ async function loadLogs(){
     <tr>
       <td>${l.created_at}</td>
       <td>${l.product_name}</td>
+      <td>${l.site === 'mess' ? 'MIMS/Mess' : 'MIOF/Office'}</td>
       <td>${l.category_name}</td>
       <td class="type-${l.type}">${l.type === 'in' ? 'MASUK' : 'KELUAR'}</td>
       <td>${l.qty}</td>
       <td>${l.note || '-'}</td>
       <td>${l.user || '-'}</td>
     </tr>
-  `).join('') || '<tr><td colspan="7" class="empty">Belum ada riwayat</td></tr>';
+  `).join('') || '<tr><td colspan="8" class="empty">Belum ada riwayat</td></tr>';
 }
 
 // ===== HELPER: nama file laporan dinamis =====
@@ -914,6 +915,7 @@ function buildReportFilename(type, from, to, ext){
   let typeLabel;
   if (type === 'in') typeLabel = 'Stok-Masuk';
   else if (type === 'out') typeLabel = 'Stok-Keluar';
+  else if (type === 'so') typeLabel = 'Stock-Opname';
   else typeLabel = 'Semua-Stok';
 
   let datePart = '';
@@ -987,17 +989,23 @@ async function loadReport(){
   if (type) url += 'type=' + type;
   const logs = await api(url);
   const tbody = document.getElementById('reportTable');
-  tbody.innerHTML = logs.map(l => `
+  tbody.innerHTML = logs.map(l => {
+    const isOpname = l.note && (l.note.startsWith('[OPNAME]') || l.note.startsWith('[OPNAME APPROVE]'));
+    const tipeLabel = isOpname ? 'SO' : (l.type === 'in' ? 'MASUK' : 'KELUAR');
+    const tipeClass = isOpname ? 'type-so' : `type-${l.type}`;
+    return `
     <tr>
       <td>${l.created_at}</td>
       <td>${l.product_name}</td>
+      <td>${l.site === 'mess' ? 'MIMS/Mess' : 'MIOF/Office'}</td>
       <td>${l.category_name}</td>
-      <td class="type-${l.type}">${l.type === 'in' ? 'MASUK' : 'KELUAR'}</td>
+      <td class="${tipeClass}">${tipeLabel}</td>
       <td>${l.qty}</td>
       <td>${l.note || '-'}</td>
       <td>${l.user || '-'}</td>
     </tr>
-  `).join('') || '<tr><td colspan="7" class="empty">Tidak ada data</td></tr>';
+  `;
+  }).join('') || '<tr><td colspan="8" class="empty">Tidak ada data</td></tr>';
 }
 
 async function loadCurrentStock(){
