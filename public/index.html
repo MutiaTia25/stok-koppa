@@ -695,6 +695,7 @@ tbody tr:hover td { background: #f9fafb; }
 /* ===== MISC ===== */
 .type-in { color: var(--green); font-weight: 700; }
 .type-out { color: var(--red); font-weight: 700; }
+.type-so { color: #7c3aed; font-weight: 700; }
 .empty { text-align: center; color: var(--gray); padding: 44px 20px; font-size: 14px; }
 .chart-wrap { position: relative; height: 220px; }
 
@@ -1060,7 +1061,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Waktu</th><th>Produk</th><th>Kategori</th><th>Tipe</th><th>Jumlah</th><th>Catatan</th><th>Petugas</th></tr></thead>
+              <thead><tr><th>Waktu</th><th>Produk</th><th>Lokasi</th><th>Kategori</th><th>Tipe</th><th>Jumlah</th><th>Catatan</th><th>Petugas</th></tr></thead>
               <tbody id="logsTable"></tbody>
             </table>
           </div>
@@ -1086,11 +1087,12 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
             <option value="all">Semua Tipe</option>
             <option value="in">Stok Masuk</option>
             <option value="out">Stok Keluar</option>
+            <option value="so">Stock Opname (SO)</option>
           </select>
         </div>
         <div class="table-wrap" style="margin-bottom:16px;">
           <table>
-            <thead><tr><th>Waktu</th><th>Produk</th><th>Kategori</th><th>Tipe</th><th>Jumlah</th><th>Catatan</th><th>Petugas</th></tr></thead>
+            <thead><tr><th>Waktu</th><th>Produk</th><th>Lokasi</th><th>Kategori</th><th>Tipe</th><th>Jumlah</th><th>Catatan</th><th>Petugas</th></tr></thead>
             <tbody id="reportTable"></tbody>
           </table>
         </div>
