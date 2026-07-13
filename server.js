@@ -594,11 +594,14 @@ app.get('/api/disposals', authMiddleware, (req, res) => {
 // ===== STOCK LOGS / HISTORY =====
 app.get('/api/logs', authMiddleware, (req, res) => {
   const { from, to, type, product_id } = req.query;
-  let sql = `SELECT l.*, p.name as product_name, c.name as category_name FROM stock_logs l
+  let sql = `SELECT l.*, p.name as product_name, c.name as category_name, p.default_location as site FROM stock_logs l
     JOIN products p ON p.id=l.product_id
     JOIN categories c ON c.id=p.category_id
     WHERE (l.note IS NULL OR (l.note NOT LIKE '[OPNAME]%' AND l.note NOT LIKE '[OPNAME APPROVE]%'))`;
   const params = [];
+  // Kasir cuma boleh lihat riwayat input MEREKA SENDIRI — bukan punya kasir lain.
+  // Admin tetap lihat semua (sama seperti Riwayat SO: kasir lihat punya sendiri, admin lihat semua).
+  if (req.user.role !== 'admin') { sql += ` AND l.user = ?`; params.push(req.user.username); }
   if (from) { sql += ` AND date(l.created_at) >= date(?)`; params.push(from); }
   if (to) { sql += ` AND date(l.created_at) <= date(?)`; params.push(to); }
   if (type) { sql += ` AND l.type=?`; params.push(type); }
@@ -661,7 +664,7 @@ app.get('/api/summary', authMiddleware, (req, res) => {
 app.get('/api/report', authMiddleware, (req, res) => {
   const { from, to, type } = req.query;
   let sql = `
-    SELECT l.id, l.created_at, p.name as product_name, c.name as category_name,
+    SELECT l.id, l.created_at, p.name as product_name, c.name as category_name, p.default_location as site,
            l.type, l.qty, l.note, l.user
     FROM stock_logs l
     JOIN products p ON p.id = l.product_id
@@ -671,7 +674,15 @@ app.get('/api/report', authMiddleware, (req, res) => {
   const params = [];
   if (from) { sql += ` AND date(l.created_at) >= date(?)`; params.push(from); }
   if (to) { sql += ` AND date(l.created_at) <= date(?)`; params.push(to); }
-  if (type && type !== 'all') { sql += ` AND l.type = ?`; params.push(type); }
+  // 'so' = transaksi yang berasal dari Stock Opname (ditandai note-nya diawali [OPNAME]).
+  // 'in'/'out' = transaksi MANUAL saja (stock opname dikecualikan supaya gak dobel-hitung
+  // dengan filter Stok Masuk/Keluar biasa).
+  if (type === 'so') {
+    sql += ` AND (l.note LIKE '[OPNAME]%' OR l.note LIKE '[OPNAME APPROVE]%')`;
+  } else if (type && type !== 'all') {
+    sql += ` AND l.type = ? AND (l.note IS NULL OR (l.note NOT LIKE '[OPNAME]%' AND l.note NOT LIKE '[OPNAME APPROVE]%'))`;
+    params.push(type);
+  }
   sql += ` ORDER BY l.created_at DESC`;
 
   const data = db.prepare(sql).all(...params);
@@ -1079,6 +1090,8 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
     WHERE (l.note IS NULL OR (l.note NOT LIKE '[OPNAME]%' AND l.note NOT LIKE '[OPNAME APPROVE]%'))
   `;
   const params = [];
+  // Kasir cuma export riwayat input MEREKA SENDIRI — admin tetap export semua.
+  if (req.user.role !== 'admin') { sqlLogs += ` AND l.user = ?`; params.push(req.user.username); }
   if (from) { sqlLogs += ` AND date(l.created_at) >= date(?)`; params.push(from); }
   if (to)   { sqlLogs += ` AND date(l.created_at) <= date(?)`; params.push(to); }
   if (type && type !== 'all') { sqlLogs += ` AND l.type=?`; params.push(type); }
@@ -1185,8 +1198,11 @@ app.get('/api/export/laporan', authMiddleware, async (req, res) => {
   const p1 = [];
   if (from) { sqlLogs += ` AND date(l.created_at) >= date(?)`; p1.push(from); }
   if (to)   { sqlLogs += ` AND date(l.created_at) <= date(?)`; p1.push(to); }
-  if (type && type !== 'all') { sqlLogs += ` AND l.type=?`; p1.push(type); }
-  const logs = db.prepare(sqlLogs + ` ORDER BY l.created_at DESC`).all(...p1);
+  // Kecualikan entri dari Stock Opname di sini — sheet Stock Opname di bawah
+  // sudah nampilin datanya sendiri, supaya gak dobel-hitung di 2 sheet.
+  sqlLogs += ` AND (l.note IS NULL OR (l.note NOT LIKE '[OPNAME]%' AND l.note NOT LIKE '[OPNAME APPROVE]%'))`;
+  if (type && type !== 'all' && type !== 'so') { sqlLogs += ` AND l.type=?`; p1.push(type); }
+  const logs = (type === 'so') ? [] : db.prepare(sqlLogs + ` ORDER BY l.created_at DESC`).all(...p1);
 
   let sqlOp = `SELECT o.created_at, p.name as product_name, c.name as category_name, p.default_location as site,
     o.stock_fisik, o.stock_system, o.selisih, o.user, o.status
@@ -1322,7 +1338,12 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
   const params = [];
   if (from) { sql += ` AND date(l.created_at) >= date(?)`; params.push(from); }
   if (to)   { sql += ` AND date(l.created_at) <= date(?)`; params.push(to); }
-  if (type && type !== 'all') { sql += ` AND l.type=?`; params.push(type); }
+  if (type === 'so') {
+    sql += ` AND (l.note LIKE '[OPNAME]%' OR l.note LIKE '[OPNAME APPROVE]%')`;
+  } else if (type && type !== 'all') {
+    sql += ` AND l.type=? AND (l.note IS NULL OR (l.note NOT LIKE '[OPNAME]%' AND l.note NOT LIKE '[OPNAME APPROVE]%'))`;
+    params.push(type);
+  }
   sql += ` ORDER BY l.id DESC`;
   const logs = db.prepare(sql).all(...params);
 
@@ -1484,9 +1505,12 @@ app.get('/api/export/logs-pdf', authMiddleware, (req, res) => {
     curY += 20;
   } else {
     logs.forEach((item, idx) => {
-      const tipeVal = item.type === 'in'
-        ? { text: 'MASUK',  _color: GREEN }
-        : { text: 'KELUAR', _color: RED };
+      const isOpname = item.note && (item.note.startsWith('[OPNAME]') || item.note.startsWith('[OPNAME APPROVE]'));
+      const tipeVal = isOpname
+        ? { text: 'SO', _color: '#7C3AED' }
+        : (item.type === 'in'
+          ? { text: 'MASUK',  _color: GREEN }
+          : { text: 'KELUAR', _color: RED });
       tableRow(logsColDef, [
         truncate(item.created_at, 18),
         truncate(item.product_name, 28),
