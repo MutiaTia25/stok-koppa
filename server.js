@@ -19,6 +19,15 @@ const upload = multer({
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data.db');
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA foreign_keys = ON');
+// ===== PENTING UNTUK PEMAKAIAN SERENTAK (BEBERAPA KASIR/ADMIN BERSAMAAN) =====
+// journal_mode=WAL: memungkinkan orang lain tetap bisa BACA data walau ada yang
+// sedang MENULIS (submit transaksi) di saat bersamaan — tanpa ini, satu transaksi
+// bisa ke-block/gagal kalau ada transaksi lain yang nulis di detik yang sama.
+// busy_timeout: kalau memang ada 2 tulisan bentrok PERSIS di waktu yang sama,
+// SQLite akan otomatis nunggu sampai 5 detik dan coba lagi, bukan langsung
+// gagal dengan error "database is locked".
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA busy_timeout = 5000');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ganti-secret-key-ini-di-production';
 
@@ -559,6 +568,52 @@ app.post('/api/stock/out', authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
+// ===== EDIT TRANSAKSI STOK MASUK/KELUAR YANG SALAH INPUT =====
+// Dipakai kalau kasir/admin salah ketik qty (atau salah pilih masuk/keluar) dan
+// mau membetulkan transaksi yang SUDAH tersimpan, bukan bikin transaksi baru
+// terpisah. Beda dengan opname: ini langsung koreksi transaksi manual yang ada.
+app.put('/api/stock/:logId', authMiddleware, (req, res) => {
+  const { qty, type, note } = req.body;
+  if (!qty || qty <= 0) return res.status(400).json({ error: 'Jumlah tidak valid' });
+  if (type !== 'in' && type !== 'out') return res.status(400).json({ error: 'Tipe transaksi tidak valid' });
+
+  const log = db.prepare('SELECT * FROM stock_logs WHERE id=?').get(req.params.logId);
+  if (!log) return res.status(404).json({ error: 'Transaksi tidak ditemukan' });
+
+  // Kasir cuma boleh edit transaksi MEREKA SENDIRI — admin boleh edit siapapun.
+  if (req.user.role !== 'admin' && log.user !== req.user.username) {
+    return res.status(403).json({ error: 'Tidak bisa mengedit transaksi milik akun lain' });
+  }
+  // Transaksi dari Stock Opname punya proses koreksinya sendiri (update SO), bukan lewat sini.
+  if (log.note && (log.note.startsWith('[OPNAME]') || log.note.startsWith('[OPNAME APPROVE]'))) {
+    return res.status(400).json({ error: 'Transaksi ini berasal dari Stock Opname, koreksi lewat menu Stock Opname' });
+  }
+  // Batasi cuma transaksi HARI INI yang boleh diedit — supaya gak ada koreksi
+  // ke transaksi lama yang sudah "ketimpa" banyak transaksi lain sesudahnya.
+  const today = new Date().toISOString().split('T')[0];
+  const logDate = String(log.created_at).split(' ')[0];
+  if (logDate !== today) {
+    return res.status(400).json({ error: 'Cuma transaksi hari ini yang bisa diedit' });
+  }
+
+  const product = db.prepare('SELECT warehouse_stock FROM products WHERE id=?').get(log.product_id);
+  if (!product) return res.status(404).json({ error: 'Produk tidak ditemukan' });
+
+  // Batalkan efek transaksi lama, lalu terapkan efek transaksi baru
+  const oldEffect = log.type === 'in' ? log.qty : -log.qty;
+  const newEffect = type === 'in' ? qty : -qty;
+  const delta = newEffect - oldEffect;
+  const newStock = product.warehouse_stock + delta;
+  if (newStock < 0) {
+    return res.status(400).json({ error: 'Stok tidak boleh minus setelah diedit. Sisa stok saat ini: ' + product.warehouse_stock });
+  }
+
+  db.prepare('UPDATE products SET warehouse_stock=? WHERE id=?').run(newStock, log.product_id);
+  db.prepare('UPDATE stock_logs SET qty=?, type=?, note=? WHERE id=?').run(qty, type, note || '', req.params.logId);
+
+  res.json({ ok: true, newStock });
+});
+
 // ===== PEMUSNAHAN STOK (barang rusak / expired / hilang) =====
 app.post('/api/disposal', authMiddleware, (req, res) => {
   const { product_id, qty, reason, note } = req.body;
@@ -594,7 +649,7 @@ app.get('/api/disposals', authMiddleware, (req, res) => {
 // ===== STOCK LOGS / HISTORY =====
 app.get('/api/logs', authMiddleware, (req, res) => {
   const { from, to, type, product_id } = req.query;
-  let sql = `SELECT l.*, p.name as product_name, c.name as category_name, p.default_location as site FROM stock_logs l
+  let sql = `SELECT l.*, p.name as product_name, p.barcode, p.sku, c.name as category_name, p.default_location as site FROM stock_logs l
     JOIN products p ON p.id=l.product_id
     JOIN categories c ON c.id=p.category_id
     WHERE (l.note IS NULL OR (l.note NOT LIKE '[OPNAME]%' AND l.note NOT LIKE '[OPNAME APPROVE]%'))`;
@@ -734,7 +789,7 @@ app.get('/api/products/check-barcode/:barcode', authMiddleware, (req, res) => {
 app.get('/api/opname', authMiddleware, (req, res) => {
   const { from, to, status } = req.query;
   let sql = `
-    SELECT o.id, o.product_id, p.name as product_name, c.name as category_name,
+    SELECT o.id, o.product_id, p.name as product_name, p.barcode, c.name as category_name,
            p.default_location as site, o.location, o.stock_system, o.stock_fisik, o.selisih, o.user, o.created_at,
            o.status, o.approved_by, o.approved_at
     FROM stock_opname o
@@ -921,7 +976,7 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   if (to) { where += ' AND DATE(o.created_at) <= ?'; params.push(to); }
   if (status) { where += ' AND o.status = ?'; params.push(status); }
   const rows = db.prepare(`
-    SELECT p.barcode, p.name as product_name, c.name as category_name, p.default_location as site,
+    SELECT p.barcode, p.sku, p.name as product_name, c.name as category_name, p.default_location as site,
            o.stock_fisik, o.stock_system, o.selisih, o.user, o.created_at, o.status
     FROM stock_opname o
     JOIN products p ON p.id = o.product_id
@@ -934,6 +989,7 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   const sheet = workbook.addWorksheet('Stock Opname');
   sheet.columns = [
     { header: 'Barcode', key: 'barcode', width: 18 },
+    { header: 'SKU', key: 'sku', width: 12 },
     { header: 'Nama Produk', key: 'product_name', width: 30 },
     { header: 'Kategori', key: 'category_name', width: 16 },
     { header: 'Site', key: 'site', width: 10 },
@@ -947,6 +1003,8 @@ app.get('/api/export/opname', authMiddleware, async (req, res) => {
   sheet.getRow(1).font = { bold: true };
   rows.forEach(r => sheet.addRow({
     ...r,
+    barcode: r.barcode || '-',
+    sku: r.sku || '-',
     site: r.site === 'mess' ? 'MIMS/Mess' : 'MIOF/Office',
   }));
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -1083,7 +1141,7 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
 
   // --- Query stok (semua site) ---
   let sqlLogs = `
-    SELECT l.created_at, p.name as product_name, c.name as category_name, p.default_location as site, l.type, l.qty, l.note, l.user
+    SELECT l.created_at, p.name as product_name, p.barcode, p.sku, c.name as category_name, p.default_location as site, l.type, l.qty, l.note, l.user
     FROM stock_logs l
     JOIN products p ON p.id=l.product_id
     JOIN categories c ON c.id=p.category_id
@@ -1145,10 +1203,12 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
 
   // ===================== SHEET 1: Riwayat Stok (semua site) =====================
   const sh1 = workbook.addWorksheet('Riwayat Stok');
-  addTitleBlock(sh1, 'RIWAYAT STOK MASUK / KELUAR (MIOF & MIMS)', `Periode : ${periodeStr}   |   Cetak : ${nowStr}   |   Total : ${logs.length} transaksi`, 'H');
+  addTitleBlock(sh1, 'RIWAYAT STOK MASUK / KELUAR (MIOF & MIMS)', `Periode : ${periodeStr}   |   Cetak : ${nowStr}   |   Total : ${logs.length} transaksi`, 'J');
 
   sh1.columns = [
     { key: 'waktu',    width: 22 },
+    { key: 'barcode',  width: 16 },
+    { key: 'sku',      width: 12 },
     { key: 'produk',   width: 36 },
     { key: 'kategori', width: 16 },
     { key: 'site',     width: 10 },
@@ -1157,19 +1217,19 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
     { key: 'catatan',  width: 30 },
     { key: 'petugas',  width: 14 },
   ];
-  styleHeaderRow(sh1.getRow(3), ['Waktu','Produk','Kategori','Site','Tipe','Jumlah','Catatan','Petugas'], 'FF1A56DB');
+  styleHeaderRow(sh1.getRow(3), ['Waktu','Barcode','SKU','Produk','Kategori','Site','Tipe','Jumlah','Catatan','Petugas'], 'FF1A56DB');
 
   logs.forEach((item, idx) => {
     const row = sh1.addRow([
-      item.created_at, item.product_name, item.category_name,
+      item.created_at, item.barcode || '-', item.sku || '-', item.product_name, item.category_name,
       item.site === 'mess' ? 'MIMS' : 'MIOF',
       item.type === 'in' ? 'STOK MASUK' : 'STOK KELUAR',
       item.qty, item.note || '-', item.user || '-'
     ]);
     styleDataRow(row, idx);
-    const tipeCell = row.getCell(5);
+    const tipeCell = row.getCell(7);
     tipeCell.font = { bold: true, size: 9.5, color: { argb: item.type === 'in' ? 'FF0F9B52' : 'FFE02424' } };
-    row.getCell(6).alignment = { horizontal: 'center' };
+    row.getCell(8).alignment = { horizontal: 'center' };
   });
 
   sh1.views = [{ state: 'frozen', ySplit: 3 }];
@@ -1177,9 +1237,9 @@ app.get('/api/export/logs', authMiddleware, async (req, res) => {
   sh1.mergeCells(`A${lr1}:D${lr1}`);
   sh1.getCell(`A${lr1}`).value = `Total Transaksi : ${logs.length}`;
   sh1.getCell(`A${lr1}`).font = { bold: true, color: { argb: 'FF1A56DB' } };
-  sh1.getCell(`H${lr1 + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
-  sh1.getCell(`H${lr1 + 5}`).value = 'Administrator';
-  sh1.getCell(`H${lr1 + 9}`).value = '(____________________)';
+  sh1.getCell(`J${lr1 + 3}`).value = `Palembang, ${new Date().toLocaleDateString('id-ID')}`;
+  sh1.getCell(`J${lr1 + 5}`).value = 'Administrator';
+  sh1.getCell(`J${lr1 + 9}`).value = '(____________________)';
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="Riwayat-Stok-KOPPA.xlsx"');
