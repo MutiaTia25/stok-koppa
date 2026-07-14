@@ -756,6 +756,7 @@ function hideStockSearch(){
 function pilihProdukStock(product){
   if (typeof product === 'string') product = JSON.parse(product);
   stockSelectedProduct = product;
+  editingStockLogId = null;
 
   // Isi input scan dengan nama produk
   const scanInput = document.getElementById('scanBarcode');
@@ -768,6 +769,7 @@ function pilihProdukStock(product){
 
   // Render form inline
   renderStockForm(product);
+  loadTodayStockLogsForProduct(product.id);
 
   // Delay lebih panjang — innerHTML perlu waktu render sebelum bisa di-focus
   setTimeout(() => {
@@ -782,6 +784,66 @@ function pilihProdukStock(product){
     }
   }, 150);
   if (typeof playBeep === 'function') playBeep();
+}
+
+// Ambil transaksi manual HARI INI untuk produk ini, supaya bisa dikoreksi
+// langsung kalau salah input, bukan bikin transaksi baru terpisah.
+let editingStockLogId = null;
+async function loadTodayStockLogsForProduct(productId){
+  const wrapEl = document.getElementById('stockTodayLogs');
+  if (!wrapEl) return;
+  try {
+    const logs = await api('/logs?product_id=' + productId);
+    const today = new Date().toISOString().split('T')[0];
+    const todayLogs = logs.filter(l => String(l.created_at).startsWith(today));
+    if (todayLogs.length === 0) { wrapEl.innerHTML = ''; wrapEl.style.display = 'none'; return; }
+
+    wrapEl.style.display = 'block';
+    wrapEl.innerHTML = `
+      <div style="font-size:12px; font-weight:700; color:#475569; margin:12px 0 6px;">Transaksi produk ini hari ini</div>
+      ${todayLogs.map(l => `
+        <div style="display:flex; align-items:center; gap:8px; padding:7px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:6px; flex-wrap:wrap;">
+          <span class="type-${l.type}" style="font-weight:700; font-size:12px; min-width:52px;">${l.type === 'in' ? 'MASUK' : 'KELUAR'}</span>
+          <span style="font-size:13px; font-weight:600;">${l.qty}</span>
+          <span style="font-size:11px; color:#94a3b8; flex:1;">${l.created_at.split(' ')[1] || ''} ${l.note ? '— ' + l.note : ''}</span>
+          <button type="button" class="btn btn-gray btn-sm" onclick='editStockLog(${l.id}, "${l.type}", ${l.qty}, ${JSON.stringify(l.note || '').replace(/'/g, "&#39;")})'>Edit</button>
+        </div>
+      `).join('')}
+    `;
+  } catch(e) {
+    wrapEl.innerHTML = '';
+    wrapEl.style.display = 'none';
+  }
+}
+
+// Masuk ke mode edit: isi form dengan data transaksi yang mau dikoreksi
+function editStockLog(logId, type, qty, note){
+  editingStockLogId = logId;
+  const qtyEl = document.getElementById('stockQty');
+  const noteEl = document.getElementById('stockNote');
+  if (qtyEl) qtyEl.value = qty;
+  if (noteEl) noteEl.value = note || '';
+
+  const banner = document.getElementById('stockEditBanner');
+  if (banner) {
+    banner.style.display = 'block';
+    banner.innerHTML = `
+      <div style="background:#fef9c3; border:1px solid #fde68a; border-radius:8px; padding:8px 12px; margin-bottom:10px; font-size:12.5px; color:#92400e; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+        <span>Sedang mengedit transaksi <b>${type === 'in' ? 'MASUK' : 'KELUAR'}</b> qty ${qty}. Ubah angkanya lalu klik tombol ${type === 'in' ? '"Barang Masuk"' : '"Barang Keluar"'} lagi untuk update.</span>
+        <button type="button" class="btn btn-gray btn-sm" onclick="cancelEditStockLog()">Batal Edit</button>
+      </div>`;
+  }
+  if (qtyEl) qtyEl.focus();
+}
+
+function cancelEditStockLog(){
+  editingStockLogId = null;
+  const banner = document.getElementById('stockEditBanner');
+  if (banner) { banner.style.display = 'none'; banner.innerHTML = ''; }
+  const qtyEl = document.getElementById('stockQty');
+  const noteEl = document.getElementById('stockNote');
+  if (qtyEl) qtyEl.value = '';
+  if (noteEl) noteEl.value = '';
 }
 
 function renderStockForm(product){
@@ -804,6 +866,7 @@ function renderStockForm(product){
           <div style="font-size:22px; font-weight:800; color:#1e3a8a;">${product.warehouse_stock}</div>
         </div>
       </div>` : ``}
+      <div id="stockEditBanner" style="display:none;"></div>
       <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;">
         <div>
           <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Tanggal</label>
@@ -825,12 +888,14 @@ function renderStockForm(product){
         ${_isAdminStock ? `<button class="btn btn-red" onclick="submitStock('out')" style="flex:1; min-width:140px;">Barang Keluar</button>` : ``}
         <button class="btn btn-gray" onclick="resetStockForm()" style="min-width:80px;">Ganti</button>
       </div>
+      <div id="stockTodayLogs" style="display:none; margin-top:14px;"></div>
     </div>
   `;
 }
 
 function resetStockForm(){
   stockSelectedProduct = null;
+  editingStockLogId = null;
   const scanInput = document.getElementById('scanBarcode');
   if (scanInput) { scanInput.value = ''; scanInput.focus(); }
   hideStockSearch();
@@ -862,6 +927,22 @@ async function submitStock(type){
   if (!product_id) return toast('Pilih produk terlebih dahulu', 'error');
   if (!qty || qty <= 0) return toast('Jumlah harus lebih dari 0', 'error');
 
+  // Mode edit: koreksi transaksi yang sudah ada, bukan bikin transaksi baru
+  if (editingStockLogId) {
+    try {
+      await api('/stock/' + editingStockLogId, 'PUT', { qty, type, note });
+      toast('Transaksi berhasil diperbarui');
+      editingStockLogId = null;
+      document.getElementById('stockQty').value = '';
+      document.getElementById('stockNote').value = '';
+      const banner = document.getElementById('stockEditBanner');
+      if (banner) { banner.style.display = 'none'; banner.innerHTML = ''; }
+      await loadStockPage();
+      if (stockSelectedProduct) await loadTodayStockLogsForProduct(stockSelectedProduct.id);
+    } catch(e){ toast(e.message, 'error'); }
+    return;
+  }
+
   let date = null;
   if (dateInput) {
     const now = new Date();
@@ -878,6 +959,7 @@ async function submitStock(type){
     document.getElementById('stockNote').value = '';
     document.getElementById('stockDate').value = '';
     await loadStockPage();
+    if (stockSelectedProduct) await loadTodayStockLogsForProduct(stockSelectedProduct.id);
   } catch(e){ toast(e.message, 'error'); }
 }
 
@@ -895,6 +977,8 @@ async function loadLogs(){
     <tr>
       <td>${l.created_at}</td>
       <td>${l.product_name}</td>
+      <td>${l.barcode || '-'}</td>
+      <td>${l.sku || '-'}</td>
       <td>${l.site === 'mess' ? 'MIMS/Mess' : 'MIOF/Office'}</td>
       <td>${l.category_name}</td>
       <td class="type-${l.type}">${l.type === 'in' ? 'MASUK' : 'KELUAR'}</td>
@@ -902,7 +986,7 @@ async function loadLogs(){
       <td>${l.note || '-'}</td>
       <td>${l.user || '-'}</td>
     </tr>
-  `).join('') || '<tr><td colspan="8" class="empty">Belum ada riwayat</td></tr>';
+  `).join('') || '<tr><td colspan="10" class="empty">Belum ada riwayat</td></tr>';
 }
 
 // ===== HELPER: nama file laporan dinamis =====
@@ -1440,13 +1524,14 @@ async function loadOpnameHistory(){
       <td style="font-size:12px;white-space:nowrap;">${o.created_at}</td>
       <td>${o.user || '-'}</td>
       <td style="font-weight:600;" title="${o.product_name}">${o.product_name}</td>
+      <td style="font-size:12px;">${o.barcode || '-'}</td>
       <td style="font-size:12px;">${o.site === 'mess' ? 'MIMS/Mess' : 'MIOF/Office'}</td>
       <td style="text-align:center;"><b>${o.stock_fisik}</b></td>
       <td style="text-align:center;">${o.stock_system}</td>
       <td class="${selisihClass}" style="font-weight:700;text-align:center;">${selisihLabel}</td>
       <td>${statusCell}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="9" class="empty">Belum ada riwayat opname</td></tr>';
+  }).join('') || '<tr><td colspan="10" class="empty">Belum ada riwayat opname</td></tr>';
 
   // Sync master checkbox
   const masterChk = document.getElementById('selectAllOpname');
