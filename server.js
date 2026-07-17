@@ -870,20 +870,10 @@ app.post('/api/opname', authMiddleware, (req, res) => {
   const isAdmin = req.user.role === 'admin';
   const status = isAdmin ? 'approved' : 'pending';
 
-  // Cegah double entry:
-  // Untuk KASIR → otomatis cari pending miliknya sendiri untuk produk ini.
-  //   Kalau ketemu, UPDATE bukan INSERT baru. Tidak perlu client kirim update_opname_id.
-  // Untuk ADMIN → cek update_opname_id kalau dikirim, atau otomatis cek pending juga.
+  // Kalau ini update dari SO pending yang sudah ada (produk sama, belum di-approve),
+  // UPDATE baris itu saja — supaya gak ada entri SO ganda buat produk yang sama.
   let existingPending = null;
-  if (!isAdmin) {
-    // Kasir: selalu cek apakah sudah ada pending untuk produk ini dari kasir yang sama
-    existingPending = db.prepare(`
-      SELECT id FROM stock_opname
-      WHERE product_id=? AND status='pending' AND user=?
-      ORDER BY created_at DESC LIMIT 1
-    `).get(product_id, req.user.username);
-  } else if (update_opname_id) {
-    // Admin: update hanya kalau eksplisit minta update
+  if (update_opname_id) {
     existingPending = db.prepare(`SELECT id FROM stock_opname WHERE id=? AND product_id=? AND status='pending'`)
       .get(update_opname_id, product_id);
   }
